@@ -37,9 +37,10 @@ fun CategoriesScreen(
     viewModel: CategoriesViewModel,
     onLogout: () -> Unit,
     onChat: () -> Unit,
+    onReservations: () -> Unit,
     chatUnreadCount: Int,
     onBack: () -> Unit,
-    onCategorySelected: (tableId: Int, fakturaId: Int, kategoriId: Int) -> Unit
+    onCategorySelected: (tableId: Int, erreserbaId: Int, kategoriKey: String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var goBackAfterClose by remember { mutableStateOf(false) }
@@ -54,6 +55,9 @@ fun CategoriesScreen(
         onLogoClick = onBack,
         navigationIcon = Icons.Filled.Apps,
         navigationIconContentDescription = "Mahaiak",
+        showMiddleAction = true,
+        middleIconContentDescription = "Reservas",
+        onMiddleAction = onReservations,
         rightIconResId = R.drawable.chat,
         rightIconContentDescription = "Chat",
         onRightAction = onChat,
@@ -61,36 +65,20 @@ fun CategoriesScreen(
     ) { contentModifier ->
         Box(modifier = contentModifier.fillMaxSize()) {
             val categories = uiState.categories
-            val session = uiState.session
             val orange = remember { Color(0xFFF3863A) }
             val shape = remember { RoundedCornerShape(18.dp) }
             val elevation = 10.dp
 
-            session?.takeIf { it.requiresDecision }?.let { s ->
-                AlertDialog(
-                    onDismissRequest = onBack,
-                    title = { Text(text = "Faktura itxita") },
-                    text = { Text(text = "Totala: ${s.fakturaTotala}€") },
-                    confirmButton = {
-                        TextButton(onClick = { viewModel.reopenFactura(tableId) }) { Text("Berriro ireki") }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = onBack) { Text("Bueltatu") }
-                    }
-                )
-            }
-
             if (showClosePreviewDialog) {
-                val fakturaId = session?.fakturaId ?: 0
+                val erreserbaId = uiState.erreserbaId ?: 0
                 AlertDialog(
                     onDismissRequest = { showClosePreviewDialog = false },
-                    title = { Text(text = "Faktura itxi") },
+                    title = { Text(text = "Erreserba itxi") },
                     text = {
                         val lines = uiState.closePreviewLines
+                        val total = uiState.closePreviewTotal
                         val totalText =
-                            session?.fakturaTotala?.let { totala ->
-                                "Totala: ${"%.2f".format(totala)}€"
-                            }
+                            total?.let { totala -> "Totala: ${"%.2f".format(totala)}€" }
 
                         Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             when {
@@ -113,8 +101,8 @@ fun CategoriesScreen(
                     confirmButton = {
                         TextButton(
                             onClick = {
-                                if (!uiState.isClosePreviewLoading && fakturaId > 0) {
-                                    viewModel.closeFactura(fakturaId)
+                                if (!uiState.isClosePreviewLoading && erreserbaId > 0) {
+                                    viewModel.closeErreserba(erreserbaId)
                                     goBackAfterClose = true
                                     showClosePreviewDialog = false
                                 }
@@ -202,9 +190,9 @@ fun CategoriesScreen(
                                 modifier
                                     .shadow(elevation = elevation, shape = shape)
                                     .clickable {
-                                        val s = session ?: return@clickable
-                                        if (s.requiresDecision) return@clickable
-                                        onCategorySelected(tableId, s.fakturaId, category.id)
+                                        val erreserbaId = uiState.erreserbaId ?: return@clickable
+                                        if (erreserbaId <= 0) return@clickable
+                                        onCategorySelected(tableId, erreserbaId, category.name)
                                     }
                         ) {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -237,10 +225,10 @@ fun CategoriesScreen(
                                     .fillMaxHeight()
                                     .shadow(elevation = elevation, shape = shape)
                                     .clickable {
-                                        val s = session ?: return@clickable
-                                        if (s.requiresDecision) return@clickable
+                                        val erreserbaId = uiState.erreserbaId ?: return@clickable
+                                        if (erreserbaId <= 0) return@clickable
                                         showClosePreviewDialog = true
-                                        viewModel.loadClosePreview(s.fakturaId)
+                                        viewModel.loadClosePreview(erreserbaId)
                                     }
                         ) {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

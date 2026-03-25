@@ -44,7 +44,12 @@ import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.delay
 
 @Composable
-fun ChatScreen(viewModel: ChatViewModel, onLogout: () -> Unit, onBack: () -> Unit) {
+fun ChatScreen(
+    viewModel: ChatViewModel,
+    onLogout: () -> Unit,
+    onBack: () -> Unit,
+    onReservations: () -> Unit
+) {
     val uiState by viewModel.uiState.collectAsState()
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -74,6 +79,9 @@ fun ChatScreen(viewModel: ChatViewModel, onLogout: () -> Unit, onBack: () -> Uni
         onLogoClick = onBack,
         navigationIcon = Icons.AutoMirrored.Filled.ArrowBack,
         navigationIconContentDescription = "Atzera",
+        showMiddleAction = true,
+        middleIconContentDescription = "Reservas",
+        onMiddleAction = onReservations,
         showRightAction = false
     ) { contentModifier ->
         Column(modifier = contentModifier.fillMaxSize()) {

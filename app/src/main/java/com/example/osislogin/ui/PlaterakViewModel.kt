@@ -2,35 +2,23 @@ package com.example.osislogin.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
-import java.net.HttpURLConnection
-import java.net.URL
 
-data class Platera(
+data class Produktua(
     val id: Int,
-    val kategoriakId: Int,
     val name: String,
     val price: Double,
-    val stock: Int
-)
-
-data class KomandaItem(
-    val id: Int,
-    val platerakId: Int,
-    val fakturakId: Int,
-    val kopurua: Int,
-    val oharrak: String?,
-    val egoera: Int
+    val stock: Int,
+    val mota: String
 )
 
 data class PlaterakUiState(
@@ -38,267 +26,79 @@ data class PlaterakUiState(
     val error: String? = null,
     val tableLabel: String? = null,
     val guestCount: Int? = null,
-    val kategoriId: Int = 0,
-    val fakturaId: Int = 0,
-    val platerak: List<Platera> = emptyList(),
-    val komandakByPlateraId: Map<Int, List<KomandaItem>> = emptyMap(),
-    val pendingQtyByPlateraId: Map<Int, Int> = emptyMap(),
-    val pendingNotesByPlateraId: Map<Int, String?> = emptyMap()
+    val erreserbaId: Int = 0,
+    val kategoriKey: String = "",
+    val produktuak: List<Produktua> = emptyList(),
+    val pendingQtyByProduktuaId: Map<Int, Int> = emptyMap()
 )
 
 class PlaterakViewModel : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://192.168.2.101:5000/api"
-    private val apiBaseCandidates = listOf(apiBaseUrlLanPrimary)
+    private val apiBaseUrlLanPrimary = "http://10.0.2.2:5101/api"
 
     private val _uiState = MutableStateFlow(PlaterakUiState())
     val uiState: StateFlow<PlaterakUiState> = _uiState
-    private var autoRefreshJob: Job? = null
 
-    private data class TableInfo(val label: String?, val guestCount: Int?)
-
-    private fun readNullableString(obj: JSONObject, vararg keys: String): String? {
-        for (key in keys) {
-            if (!obj.has(key)) continue
-            if (obj.isNull(key)) return null
-            val value = obj.optString(key, "")
-            val cleaned = value.trim()
-            if (cleaned.isEmpty()) return null
-            if (cleaned.equals("null", ignoreCase = true)) return null
-            return cleaned
-        }
-        return null
-    }
-
-    fun load(tableId: Int, fakturaId: Int, kategoriId: Int) {
+    fun load(tableId: Int, erreserbaId: Int, kategoriKey: String) {
         viewModelScope.launch {
-            try {
-                _uiState.value = _uiState.value.copy(isLoading = true, error = null, fakturaId = fakturaId, kategoriId = kategoriId)
-                val tableInfo =
-                    withContext(Dispatchers.IO) {
-                        runCatching { fetchTableInfoFromMahaiak(tableId) }.getOrElse { TableInfo(label = null, guestCount = null) }
-                    }
-                val platerak = withContext(Dispatchers.IO) { fetchPlaterak(kategoriId) }
-                val komandak = withContext(Dispatchers.IO) { fetchKomandak(fakturaId) }
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    tableLabel = tableInfo.label,
-                    guestCount = tableInfo.guestCount,
-                    platerak = platerak,
-                    komandakByPlateraId = komandak.groupBy { it.platerakId },
-                    pendingQtyByPlateraId = emptyMap(),
-                    pendingNotesByPlateraId = emptyMap()
+            _uiState.value =
+                _uiState.value.copy(
+                    isLoading = true,
+                    error = null,
+                    erreserbaId = erreserbaId,
+                    kategoriKey = kategoriKey
                 )
-                startAutoRefresh(fakturaId = fakturaId, kategoriId = kategoriId)
+            try {
+                val tableInfo = withContext(Dispatchers.IO) { fetchTableInfo(tableId) }
+                val produktuak = withContext(Dispatchers.IO) { fetchProduktuakByMota(kategoriKey) }
+                _uiState.value =
+                    _uiState.value.copy(
+                        isLoading = false,
+                        tableLabel = tableInfo.first,
+                        guestCount = tableInfo.second,
+                        produktuak = produktuak,
+                        pendingQtyByProduktuaId = emptyMap()
+                    )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: e.javaClass.simpleName)
             }
         }
     }
 
-    private fun fetchTableInfoFromMahaiak(tableId: Int): TableInfo {
-        val candidates =
-            listOf(
-                "$apiBaseUrlLanPrimary/Mahaiak",
-                "$apiBaseUrlLanPrimary/mahaiak",
-                apiBaseUrlLanPrimary.removeSuffix("/api").trimEnd('/') + "/api/Mahaiak",
-                apiBaseUrlLanPrimary.removeSuffix("/api").trimEnd('/') + "/api/mahaiak"
-            ).distinct()
-
-        var okBody: String? = null
-        for (candidateUrl in candidates) {
-            try {
-                val url = URL(candidateUrl)
-                val conn =
-                    (url.openConnection() as HttpURLConnection).apply {
-                        requestMethod = "GET"
-                        setRequestProperty("Accept", "application/json")
-                        connectTimeout = 15000
-                        readTimeout = 15000
-                    }
-                val code = conn.responseCode
-                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-                val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (code !in 200..299) continue
-                okBody = body
-                break
-            } catch (_: Exception) {
-            }
-        }
-
-        val finalBody = okBody ?: return TableInfo(label = tableId.toString(), guestCount = null)
-        val root = runCatching { JSONTokener(finalBody).nextValue() }.getOrNull()
-        val array =
-            when (root) {
-                is JSONArray -> root
-                is JSONObject -> root.optJSONArray("mahaiak") ?: root.optJSONArray("Mahaiak") ?: JSONArray()
-                else -> JSONArray()
-            }
-
-        for (i in 0 until array.length()) {
-            val obj = array.optJSONObject(i) ?: continue
-            val id = obj.optInt("id", obj.optInt("Id", -1))
-            if (id != tableId) continue
-
-            val label =
-                obj.optString(
-                        "numero",
-                        obj.optString(
-                            "zenbakia",
-                            obj.optString(
-                                "mahaiZenbakia",
-                                obj.optString(
-                                    "MahaiZenbakia",
-                                    obj.optString(
-                                        "mahaia",
-                                        obj.optString(
-                                            "Mahaia",
-                                            obj.optString(
-                                                "id",
-                                                obj.optString("Id", tableId.toString())
-                                            )
-                                        )
-                                    )
-                                )
-                            )
-                        )
-                    )
-                    .trim()
-                    .ifBlank { tableId.toString() }
-
-            val guestCountRaw =
-                when {
-                    obj.has("pertsonaKopurua") -> obj.optInt("pertsonaKopurua", -1)
-                    obj.has("pertsona_kopurua") -> obj.optInt("pertsona_kopurua", -1)
-                    obj.has("PertsonaKopurua") -> obj.optInt("PertsonaKopurua", -1)
-                    else -> -1
-                }
-            val guestCount = guestCountRaw.takeIf { it > 0 }
-
-            return TableInfo(label = label, guestCount = guestCount)
-        }
-
-        return TableInfo(label = tableId.toString(), guestCount = null)
+    fun changeQuantity(produktuaId: Int, delta: Int) {
+        val current = _uiState.value.pendingQtyByProduktuaId[produktuaId] ?: 0
+        val produktua = _uiState.value.produktuak.firstOrNull { it.id == produktuaId } ?: return
+        val next = (current + delta).coerceIn(0, produktua.stock)
+        val map = _uiState.value.pendingQtyByProduktuaId.toMutableMap()
+        if (next == 0) map.remove(produktuaId) else map[produktuaId] = next
+        _uiState.value = _uiState.value.copy(pendingQtyByProduktuaId = map, error = null)
     }
 
-    fun stopAutoRefresh() {
-        autoRefreshJob?.cancel()
-        autoRefreshJob = null
-    }
-
-    private fun startAutoRefresh(fakturaId: Int, kategoriId: Int) {
-        autoRefreshJob?.cancel()
-        autoRefreshJob =
-            viewModelScope.launch {
-                while (isActive) {
-                    try {
-                        if (_uiState.value.pendingQtyByPlateraId.isNotEmpty() || _uiState.value.pendingNotesByPlateraId.isNotEmpty()) {
-                            delay(2000)
-                            continue
-                        }
-                        val (platerak, komandak) =
-                            withContext(Dispatchers.IO) {
-                                fetchPlaterak(kategoriId) to fetchKomandak(fakturaId)
-                            }
-
-                        _uiState.value =
-                            _uiState.value.copy(
-                                platerak = platerak,
-                                komandakByPlateraId = komandak.groupBy { it.platerakId },
-                                error = null
-                            )
-                    } catch (_: Exception) {
-                    }
-                    delay(2000)
-                }
-            }
-    }
-
-    fun changeQuantity(plateraId: Int, delta: Int) {
-        val fakturaId = _uiState.value.fakturaId
-        if (fakturaId <= 0) return
-
-        viewModelScope.launch {
-            try {
-                val komandak = _uiState.value.komandakByPlateraId[plateraId].orEmpty()
-                val committedDoneQty = komandak.filter { it.egoera != 0 }.sumOf { it.kopurua }
-                val committedTotalQty = komandak.sumOf { it.kopurua }
-                val currentDisplayed = _uiState.value.pendingQtyByPlateraId[plateraId] ?: committedTotalQty
-                val nextDisplayed = (currentDisplayed + delta).coerceAtLeast(committedDoneQty)
-                val pending = _uiState.value.pendingQtyByPlateraId.toMutableMap()
-                if (nextDisplayed == committedTotalQty) {
-                    pending.remove(plateraId)
-                } else {
-                    pending[plateraId] = nextDisplayed
-                }
-                _uiState.value =
-                    _uiState.value.copy(
-                        pendingQtyByPlateraId = pending,
-                        error = null
-                    )
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(error = e.message ?: e.javaClass.simpleName)
-            }
-        }
-    }
-
-    fun updateNote(plateraId: Int, note: String) {
-        viewModelScope.launch {
-            try {
-                val cleanedNote = note.trim().takeUnless { it.isEmpty() || it.equals("null", ignoreCase = true) }.orEmpty()
-                val pending = _uiState.value.pendingNotesByPlateraId.toMutableMap()
-                if (cleanedNote.isBlank()) pending.remove(plateraId) else pending[plateraId] = cleanedNote
-                _uiState.value = _uiState.value.copy(pendingNotesByPlateraId = pending, error = null)
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(error = e.message ?: e.javaClass.simpleName)
-            }
-        }
-    }
-
-    fun commitPendingChanges(onDone: () -> Unit) {
-        val fakturaId = _uiState.value.fakturaId
-        val kategoriId = _uiState.value.kategoriId
-        if (fakturaId <= 0) {
+    fun submitEskaria(onDone: () -> Unit) {
+        val erreserbaId = _uiState.value.erreserbaId
+        if (erreserbaId <= 0) {
             onDone()
             return
         }
+
         viewModelScope.launch {
-            val pendingQty = _uiState.value.pendingQtyByPlateraId
-            val pendingNotes = _uiState.value.pendingNotesByPlateraId
-            if (pendingQty.isEmpty() && pendingNotes.isEmpty()) {
+            val pending = _uiState.value.pendingQtyByProduktuaId.filterValues { it > 0 }
+            if (pending.isEmpty()) {
                 onDone()
                 return@launch
             }
+
             try {
                 _uiState.value = _uiState.value.copy(isLoading = true, error = null)
                 withContext(Dispatchers.IO) {
-                    val touched = (pendingQty.keys + pendingNotes.keys).toSet()
-                    for (platerakId in touched) {
-                        val komandak = fetchKomandak(fakturaId).filter { it.platerakId == platerakId }
-                        val committedTotal = komandak.sumOf { it.kopurua }
-                        val desiredTotal = pendingQty[platerakId] ?: committedTotal
-                        applyDesiredTotalQuantity(fakturaId = fakturaId, platerakId = platerakId, desiredTotal = desiredTotal)
-
-                        val note = pendingNotes[platerakId]?.trim().orEmpty()
-                        if (note.isNotBlank()) {
-                            val updated = fetchKomandak(fakturaId).filter { it.platerakId == platerakId }
-                            val target = updated.maxByOrNull { it.id }
-                            if (target != null) {
-                                putOharrak(komanda = target, oharrak = note)
-                            }
-                        }
-                    }
+                    postEskaria(erreserbaId, pending)
                 }
-
-                val refreshedPlaterak = withContext(Dispatchers.IO) { fetchPlaterak(kategoriId) }
-                val refreshedKomandak = withContext(Dispatchers.IO) { fetchKomandak(fakturaId) }
+                val refreshed = withContext(Dispatchers.IO) { fetchProduktuakByMota(_uiState.value.kategoriKey) }
                 _uiState.value =
                     _uiState.value.copy(
                         isLoading = false,
                         error = null,
-                        platerak = refreshedPlaterak,
-                        komandakByPlateraId = refreshedKomandak.groupBy { it.platerakId },
-                        pendingQtyByPlateraId = emptyMap(),
-                        pendingNotesByPlateraId = emptyMap()
+                        produktuak = refreshed,
+                        pendingQtyByProduktuaId = emptyMap()
                     )
                 onDone()
             } catch (e: Exception) {
@@ -307,363 +107,203 @@ class PlaterakViewModel : ViewModel() {
         }
     }
 
-    private fun fetchPlaterak(kategoriId: Int): List<Platera> {
-        var lastError: String? = null
-        val candidates =
-            apiBaseCandidates.flatMap { base ->
-                listOf(
-                    "$base/Platerak/kategoria/$kategoriId",
-                    "$base/platerak/kategoria/$kategoriId",
-                    "$base/platerak?kategoriakId=$kategoriId",
-                    "$base/Platerak?kategoriakId=$kategoriId"
-                )
-            }
-
-        var okBody: String? = null
-        for (candidateUrl in candidates) {
-            val url = URL(candidateUrl)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                setRequestProperty("Accept", "application/json")
-                connectTimeout = 15000
-                readTimeout = 15000
-            }
-
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val body = stream.bufferedReader().use { it.readText() }
-            if (code !in 200..299) {
-                lastError = "url=$candidateUrl code=$code body=${body.take(200)}"
-                continue
-            }
-            okBody = body
-            break
-        }
-
-        val finalBody = okBody ?: throw IllegalStateException("Ezin izan da /platerak kargatu ($lastError)")
-
-        val root = JSONTokener(finalBody).nextValue()
-        val array = when (root) {
-            is JSONArray -> root
-            is JSONObject -> root.optJSONArray("platerak") ?: JSONArray()
-            else -> JSONArray()
-        }
-
-        val result = ArrayList<Platera>(array.length())
-        for (i in 0 until array.length()) {
-            val obj = array.optJSONObject(i) ?: continue
-            val id = obj.optInt("id", obj.optInt("Id", -1))
-            val kategoriakId = obj.optInt("kategoriakId", obj.optInt("KategoriakId", -1))
-            val name = obj.optString("izena", obj.optString("Izena", ""))
-            val price = obj.optDouble("prezioa", obj.optDouble("Prezioa", 0.0))
-            val stock = obj.optInt("stock", obj.optInt("Stock", 0))
-            if (id > 0) {
-                result.add(Platera(id = id, kategoriakId = kategoriakId, name = name, price = price, stock = stock))
-            }
-        }
-
-        return result
-    }
-
-    private fun fetchKomandak(fakturaId: Int): List<KomandaItem> {
-        var lastError: String? = null
-        var sawNotFound = false
-        var sawOtherError = false
-        val candidates =
-            apiBaseCandidates.flatMap { base ->
-                listOf(
-                    "$base/Komandak/faktura/$fakturaId",
-                    "$base/komandak/faktura/$fakturaId",
-                    "$base/komandak/faktura/$fakturaId/items",
-                    "$base/Komandak/faktura/$fakturaId/items"
-                )
-            }
-
-        var okBody: String? = null
-        for (candidateUrl in candidates) {
-            val url = URL(candidateUrl)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                setRequestProperty("Accept", "application/json")
-                connectTimeout = 15000
-                readTimeout = 15000
-            }
-
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val body = stream.bufferedReader().use { it.readText() }
-            if (code == 404) {
-                sawNotFound = true
-                lastError = "url=$candidateUrl code=$code body=${body.take(200)}"
-                continue
-            }
-            if (code !in 200..299) {
-                sawOtherError = true
-                lastError = "url=$candidateUrl code=$code body=${body.take(200)}"
-                continue
-            }
-            okBody = body
-            break
-        }
-
-        val finalBody = okBody ?: run {
-            if (sawNotFound && !sawOtherError) return emptyList()
-            throw IllegalStateException("Ezin izan da /komandak/faktura kargatu ($lastError)")
-        }
-
-        val root = JSONTokener(finalBody).nextValue()
-        val array = when (root) {
-            is JSONArray -> root
-            is JSONObject -> root.optJSONArray("komandak") ?: JSONArray()
-            else -> JSONArray()
-        }
-
-        val result = ArrayList<KomandaItem>(array.length())
-        for (i in 0 until array.length()) {
-            val obj = array.optJSONObject(i) ?: continue
-            val id = obj.optInt("id", obj.optInt("Id", -1))
-            val platerakId =
-                obj.optInt("platerakId", obj.optInt("PlaterakId", -1)).takeIf { it > 0 }
-                    ?: run {
-                        val pObj = obj.optJSONObject("platerak") ?: obj.optJSONObject("Platerak")
-                        pObj?.optInt("id", pObj.optInt("Id", -1))
-                    }
-                    ?: -1
-            val fakturakId =
-                obj.optInt("fakturakId", obj.optInt("FakturakId", -1)).takeIf { it > 0 }
-                    ?: run {
-                        val fObj = obj.optJSONObject("faktura") ?: obj.optJSONObject("Faktura")
-                        fObj?.optInt("id", fObj.optInt("Id", -1))
-                    }
-                    ?: -1
-            val kopurua = obj.optInt("kopurua", obj.optInt("Kopurua", 0))
-            val oharrak = readNullableString(obj, "oharrak", "Oharrak")
-            val egoeraRaw =
-                when {
-                    obj.has("egoera") && !obj.isNull("egoera") -> obj.opt("egoera")
-                    obj.has("Egoera") && !obj.isNull("Egoera") -> obj.opt("Egoera")
-                    else -> null
+    private fun fetchTableInfo(tableId: Int): Pair<String?, Int?> {
+        for (baseUrl in apiBaseUrlCandidates()) {
+            val url = "${baseUrl.trimEnd('/')}/Mahaiak"
+            val (code, body) = httpGet(url)
+            if (code !in 200..299) continue
+            val root = JSONTokener(body).nextValue()
+            val array =
+                when (root) {
+                    is JSONArray -> root
+                    is JSONObject -> root.optJSONArray("data") ?: root.optJSONArray("\$values") ?: JSONArray()
+                    else -> JSONArray()
                 }
-            val egoera =
-                when (egoeraRaw) {
-                    is Boolean -> if (egoeraRaw) 1 else 0
-                    is Int -> egoeraRaw
-                    is Number -> egoeraRaw.toInt()
-                    is String -> {
-                        val cleaned = egoeraRaw.trim()
-                        cleaned.toIntOrNull()
-                            ?: if (cleaned.equals("true", ignoreCase = true)) 1 else 0
-                    }
-                    else -> 0
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                val id = obj.optInt("id", obj.optInt("Id", -1))
+                if (id != tableId) continue
+                val label = obj.optInt("zenbakia", obj.optInt("Zenbakia", tableId)).toString()
+                val guests = obj.optInt("pertsonaKopurua", obj.optInt("PertsonaKopurua", 0))
+                return label to guests
+            }
+        }
+        return tableId.toString() to null
+    }
+
+    private fun fetchProduktuakByMota(kategoriKey: String): List<Produktua> {
+        val (motaIdByLowerName, motaNameById) = fetchMotakMaps()
+
+        var lastError: String? = null
+        for (baseUrl in apiBaseUrlCandidates()) {
+            val url = "${baseUrl.trimEnd('/')}/Produktuak"
+            try {
+                val (code, body) = httpGet(url)
+                if (code !in 200..299) {
+                    lastError = "url=$url code=$code body=${body.take(250)}"
+                    continue
                 }
-            if (id > 0 && platerakId > 0) {
-                result.add(
-                    KomandaItem(
-                        id = id,
-                        platerakId = platerakId,
-                        fakturakId = fakturakId,
-                        kopurua = kopurua,
-                        oharrak = oharrak,
-                        egoera = egoera
-                    )
-                )
+                val root = JSONTokener(body).nextValue()
+                val array =
+                    when (root) {
+                        is JSONArray -> root
+                        is JSONObject -> root.optJSONArray("data") ?: root.optJSONArray("\$values") ?: JSONArray()
+                        else -> JSONArray()
+                    }
+
+                val wanted = kategoriKey.trim()
+                val wantedId = wanted.lowercase().takeIf { it.isNotBlank() }?.let { motaIdByLowerName[it] }
+                val filtered =
+                    (0 until array.length()).mapNotNull { i ->
+                        val obj = array.optJSONObject(i) ?: return@mapNotNull null
+                        val id = obj.optInt("Id", obj.optInt("id", -1)).takeIf { it > 0 } ?: return@mapNotNull null
+                        val name = obj.optString("Izena", obj.optString("izena", id.toString())).trim()
+                        val price = obj.optDouble("Prezioa", obj.optDouble("prezioa", 0.0))
+                        val stock = obj.optInt("Stock", obj.optInt("stock", 0))
+                        val motaId = obj.optInt("MotaId", obj.optInt("motaId", -1)).takeIf { it > 0 }
+                        val motaName = motaId?.let { motaNameById[it] }.orEmpty()
+                        val accepts =
+                            when {
+                                wanted.isBlank() -> true
+                                wantedId != null && motaId != null -> motaId == wantedId
+                                wantedId == null && motaName.isNotBlank() -> motaName.equals(wanted, ignoreCase = true)
+                                else -> false
+                            }
+                        if (!accepts) return@mapNotNull null
+
+                        Produktua(
+                            id = id,
+                            name = name,
+                            price = price,
+                            stock = stock,
+                            mota = if (motaName.isNotBlank()) motaName else wanted
+                        )
+                    }
+
+                return filtered.sortedBy { it.name.lowercase() }
+            } catch (e: Exception) {
+                lastError = "url=$url error=${e.message ?: e.javaClass.simpleName}"
             }
         }
-
-        return result
+        throw IllegalStateException("Ezin izan dira produktuak kargatu ($lastError)")
     }
 
-    private fun applyDesiredTotalQuantity(fakturaId: Int, platerakId: Int, desiredTotal: Int) {
-        val all = fetchKomandak(fakturaId).filter { it.platerakId == platerakId }
-        val doneQty = all.filter { it.egoera != 0 }.sumOf { it.kopurua }
-        val open = all.filter { it.egoera == 0 }
-        val committedTotal = all.sumOf { it.kopurua }
-        val targetTotal = desiredTotal.coerceAtLeast(doneQty)
-        val diff = targetTotal - committedTotal
-        if (diff == 0) return
-
-        if (diff > 0) {
-            val latest = all.maxByOrNull { it.id }
-            val latestOpen = latest?.takeIf { it.egoera == 0 }
-            if (latestOpen != null) {
-                updateKomandaQuantity(komandaId = latestOpen.id, kopurua = latestOpen.kopurua + diff)
-            } else {
-                postKomanda(fakturaId = fakturaId, platerakId = platerakId, kopurua = diff)
-            }
-            return
-        }
-
-        var remaining = -diff
-        for (target in open.sortedByDescending { it.id }) {
-            if (remaining <= 0) break
-            val newQty = target.kopurua - remaining
-            if (newQty > 0) {
-                updateKomandaQuantity(komandaId = target.id, kopurua = newQty)
-                remaining = 0
-            } else {
-                deleteKomanda(target.id)
-                remaining -= target.kopurua
-            }
-        }
-    }
-
-    private fun deleteKomanda(komandaId: Int) {
+    private fun fetchMotakMaps(): Pair<Map<String, Int>, Map<Int, String>> {
         var lastError: String? = null
-        val candidates =
-            apiBaseCandidates.flatMap { base ->
-                listOf(
-                    "$base/Komandak/$komandaId",
-                    "$base/komandak/$komandaId"
-                )
-            }
+        for (baseUrl in apiBaseUrlCandidates()) {
+            val url = "${baseUrl.trimEnd('/')}/Kategoriak"
+            try {
+                val (code, body) = httpGet(url)
+                if (code !in 200..299) {
+                    lastError = "url=$url code=$code body=${body.take(250)}"
+                    continue
+                }
+                val root = JSONTokener(body).nextValue()
+                val array =
+                    when (root) {
+                        is JSONArray -> root
+                        is JSONObject -> root.optJSONArray("data") ?: root.optJSONArray("\$values") ?: JSONArray()
+                        else -> JSONArray()
+                    }
 
-        for (candidateUrl in candidates) {
-            val url = URL(candidateUrl)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "DELETE"
-                setRequestProperty("Accept", "application/json")
-                connectTimeout = 15000
-                readTimeout = 15000
+                val idToName = HashMap<Int, String>(array.length())
+                val lowerNameToId = HashMap<String, Int>(array.length())
+                for (i in 0 until array.length()) {
+                    val obj = array.optJSONObject(i) ?: continue
+                    val id = obj.optInt("id", obj.optInt("Id", -1)).takeIf { it > 0 } ?: continue
+                    val name = obj.optString("izena", obj.optString("Izena", "")).trim()
+                    if (name.isBlank()) continue
+                    idToName[id] = name
+                    lowerNameToId[name.lowercase()] = id
+                }
+                return lowerNameToId to idToName
+            } catch (e: Exception) {
+                lastError = "url=$url error=${e.message ?: e.javaClass.simpleName}"
             }
-            val code = conn.responseCode
-            if (code in 200..299) return
-            val body = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            lastError = "url=$candidateUrl code=$code body=${body.take(200)}"
         }
-
-        throw IllegalStateException("Ezin izan da komanda ezabatu ($lastError)")
+        return emptyMap<String, Int>() to emptyMap()
     }
 
-    private fun postKomanda(fakturaId: Int, platerakId: Int, kopurua: Int) {
-        var lastError: String? = null
-        val candidates =
-            apiBaseCandidates.flatMap { base ->
-                listOf(
-                    "$base/Komandak",
-                    "$base/komandak"
-                )
-            }
+    private fun postEskaria(erreserbaId: Int, qtyByProductId: Map<Int, Int>) {
+        val produktuakArray = JSONArray()
+        var subtotal = 0.0
+        for ((productId, qty) in qtyByProductId) {
+            val produktua = _uiState.value.produktuak.firstOrNull { it.id == productId } ?: continue
+            val unitPrice = produktua.price
+            subtotal += unitPrice * qty
+            produktuakArray.put(
+                JSONObject()
+                    .put("ProduktuaId", productId)
+                    .put("Kantitatea", qty)
+                    .put("Prezioa", unitPrice)
+            )
+        }
 
         val payload =
             JSONObject()
-                .put("fakturakId", fakturaId)
-                .put("platerakId", platerakId)
-                .put("kopurua", kopurua)
-                .toString()
+                .put("ErreserbaId", erreserbaId)
+                .put("Prezioa", subtotal)
+                .put("Egoera", "Sortuta")
+                .put("Produktuak", produktuakArray)
 
-        for (candidateUrl in candidates) {
-            val url = URL(candidateUrl)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                doOutput = true
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("Content-Type", "application/json")
-                connectTimeout = 15000
-                readTimeout = 15000
-            }
-            conn.outputStream.use { it.write(payload.toByteArray()) }
-            val code = conn.responseCode
-            if (code in 200..299) return
-            val body = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            lastError = "url=$candidateUrl code=$code body=${body.take(200)}"
-        }
-
-        throw IllegalStateException("Ezin izan da komanda sortu ($lastError)")
-    }
-
-    private fun updateKomandaQuantity(komandaId: Int, kopurua: Int) {
         var lastError: String? = null
-        val candidates =
-            apiBaseCandidates.flatMap { base ->
-                listOf(
-                    "$base/komandak/$komandaId/quantity",
-                    "$base/Komandak/$komandaId/quantity"
-                )
+        for (baseUrl in apiBaseUrlCandidates()) {
+            val url = "${baseUrl.trimEnd('/')}/Eskariak"
+            try {
+                val (code, body) = httpPostJson(url, payload)
+                if (code in 200..299) return
+                lastError = "url=$url code=$code body=${body.take(250)}"
+            } catch (e: Exception) {
+                lastError = "url=$url error=${e.message ?: e.javaClass.simpleName}"
             }
-
-        val payload = JSONObject().put("kopurua", kopurua).toString()
-
-        for (candidateUrl in candidates) {
-            val url = URL(candidateUrl)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "PUT"
-                doOutput = true
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("Content-Type", "application/json")
-                connectTimeout = 15000
-                readTimeout = 15000
-            }
-            conn.outputStream.use { it.write(payload.toByteArray()) }
-            val code = conn.responseCode
-            if (code in 200..299) return
-            val body = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            lastError = "url=$candidateUrl code=$code body=${body.take(200)}"
         }
-
-        throw IllegalStateException("Ezin izan da kantitatea eguneratu ($lastError)")
+        throw IllegalStateException("Ezin izan da eskaria sortu ($lastError)")
     }
 
-    private fun fetchPlateraStock(platerakId: Int): Int? {
-        val candidates =
-            apiBaseCandidates.flatMap { base ->
-                listOf(
-                    "$base/Platerak/$platerakId",
-                    "$base/platerak/$platerakId"
-                )
-            }
-
-        for (candidateUrl in candidates) {
-            val url = URL(candidateUrl)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
+    private fun httpGet(url: String): Pair<Int, String> {
+        val conn =
+            (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 setRequestProperty("Accept", "application/json")
                 connectTimeout = 15000
                 readTimeout = 15000
             }
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) continue
-            val parsed = runCatching { JSONTokener(body).nextValue() }.getOrNull()
-            val obj = parsed as? JSONObject ?: return null
-            return obj.optInt("stock", obj.optInt("Stock", Int.MIN_VALUE)).takeIf { it != Int.MIN_VALUE }
-        }
-        return null
+        val code = conn.responseCode
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        return code to body
     }
 
-    private fun putOharrak(komanda: KomandaItem, oharrak: String) {
-        var lastError: String? = null
-        val legacyCandidates =
-            apiBaseCandidates.flatMap { base ->
-                listOf(
-                    "$base/komandak/${komanda.id}/oharrak",
-                    "$base/Komandak/${komanda.id}/oharrak"
-                )
-            }
-
-        val legacyPayload =
-            JSONObject()
-                .put("oharrak", oharrak.trim().takeUnless { it.isEmpty() } ?: JSONObject.NULL)
-                .toString()
-        for (candidateUrl in legacyCandidates) {
-            val url = URL(candidateUrl)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "PUT"
-                doOutput = true
+    private fun httpPostJson(url: String, jsonBody: JSONObject): Pair<Int, String> {
+        val conn =
+            (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Accept", "application/json")
-                setRequestProperty("Content-Type", "application/json")
+                doOutput = true
                 connectTimeout = 15000
                 readTimeout = 15000
             }
+        conn.outputStream.use { os -> os.write(jsonBody.toString().toByteArray(Charsets.UTF_8)) }
+        val code = conn.responseCode
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        return code to body
+    }
 
-            conn.outputStream.use { it.write(legacyPayload.toByteArray()) }
-
-            val code = conn.responseCode
-            if (code in 200..299) return
-            val body = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            lastError = "url=$candidateUrl code=$code body=${body.take(200)}"
-        }
-
-        throw IllegalStateException("Ezin izan da oharra gorde ($lastError)")
+    private fun apiBaseUrlCandidates(): List<String> {
+        val base = apiBaseUrlLanPrimary.trimEnd('/')
+        val noApi =
+            if (base.endsWith("/api")) {
+                base.removeSuffix("/api").trimEnd('/')
+            } else {
+                base
+            }
+        return listOf(
+            base,
+            "$noApi/api",
+            "http://10.0.2.2:5101/api",
+            "http://172.16.238.14:5101/api"
+        ).distinct()
     }
 }

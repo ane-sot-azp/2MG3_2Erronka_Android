@@ -1,48 +1,63 @@
 package com.example.osislogin.ui
 
-import android.content.res.Configuration
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.osislogin.R
-import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LoginScreen(
     viewModel: LoginViewModel,
     onLoginSuccess: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-    LaunchedEffect(Unit) {
-        viewModel.loadUsers()
-    }
+    LaunchedEffect(Unit) { viewModel.loadSelectableUsers() }
 
     LaunchedEffect(uiState.isSuccess) {
         if (uiState.isSuccess) {
@@ -62,9 +77,7 @@ fun LoginScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Top
         ) {
@@ -74,190 +87,165 @@ fun LoginScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
             )
+
             Image(
                 painter = painterResource(R.drawable.logo_osis),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-                    .padding(top = 15.dp, bottom = 16.dp)
-                    .clickable { viewModel.loadUsers() }
+                modifier = Modifier.fillMaxWidth().height(200.dp).padding(top = 15.dp, bottom = 24.dp)
             )
 
-            Box(
-                modifier = Modifier.weight(1f, fill = true),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (uiState.users.isEmpty() && !uiState.isLoading) {
-                    Text(
-                        text = "Ez dago erabiltzailerik eskuragarri",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                } else {
-                    val leftColor = remember { Color(0xFF1B345D) }
-                    val rightColor = remember { Color(0xFFF3863A) }
-                    if (isLandscape) {
-                        LazyRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(32.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp)
-                        ) {
-                            itemsIndexed(items = uiState.users, key = { _, user -> user.id }) { index, user ->
-                                val borderColor = if (index % 2 == 0) leftColor else rightColor
-                                UserGridItem(
-                                    user = user,
-                                    borderColor = borderColor,
-                                    onClick = { viewModel.selectUser(user) },
-                                    modifier = Modifier.width(240.dp)
-                                )
-                            }
-                        }
-                    } else {
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(2),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 100.dp),
-                            horizontalArrangement = Arrangement.spacedBy(60.dp),
-                            verticalArrangement = Arrangement.spacedBy(60.dp),
-                            contentPadding = PaddingValues(bottom = 16.dp)
-                        ) {
-                            items(count = uiState.users.size, key = { uiState.users[it].id }) { index ->
-                                val user = uiState.users[index]
-                                val rowIndex = index / 2
-                                val columnIndex = index % 2
-                                val isOddRow = rowIndex % 2 == 0
-                                val borderColor = when {
-                                    isOddRow && columnIndex == 0 -> leftColor
-                                    isOddRow && columnIndex == 1 -> rightColor
-                                    !isOddRow && columnIndex == 0 -> rightColor
-                                    else -> leftColor
-                                }
-                                UserGridItem(
-                                    user = user,
-                                    borderColor = borderColor,
-                                    onClick = { viewModel.selectUser(user) }
-                                )
-                            }
-                        }
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                val options = listOf("Erabiltzailea" to LoginMode.SelectUser, "Kodea" to LoginMode.Code)
+                options.forEachIndexed { index, (label, mode) ->
+                    SegmentedButton(
+                        selected = uiState.mode == mode,
+                        onClick = { viewModel.setMode(mode) },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                        enabled = !uiState.isLoading
+                    ) {
+                        Text(label)
                     }
                 }
             }
 
-            uiState.error?.let { message ->
-                Text(
-                    text = message,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 16.dp)
-                )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            when (uiState.mode) {
+                LoginMode.SelectUser -> {
+                    Text(
+                        text = "",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        maxItemsInEachRow = 2,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        uiState.selectableUsers.forEach { user ->
+                            val isSelected = uiState.selectedUserKodea == user.kodea
+                            UserTileButton(
+                                label = user.label,
+                                selected = isSelected,
+                                enabled = !uiState.isLoading && !uiState.isLoadingUsers,
+                                onClick = { viewModel.selectUser(user) }
+                            )
+                        }
+                    }
+
+                    if (uiState.isLoadingUsers) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    } else if (uiState.selectableUsers.isEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Ez dago erabiltzaile aukeragarririk",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                LoginMode.Code -> {
+                    OutlinedTextField(
+                        value = uiState.langileKodea,
+                        onValueChange = { viewModel.updateLangileKodea(it.filter { c -> c.isDigit() }) },
+                        label = { Text("Langile kodea") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        enabled = !uiState.isLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+            }
+
+            OutlinedTextField(
+                value = uiState.pasahitza,
+                onValueChange = { viewModel.updatePasahitza(it) },
+                label = { Text("Pasahitza") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                enabled = !uiState.isLoading,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            Button(
+                onClick = { viewModel.login() },
+                enabled = !uiState.isLoading,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Sartu")
+            }
+
+            if (!uiState.error.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(text = uiState.error ?: "", color = MaterialTheme.colorScheme.error)
             }
         }
 
-        if (uiState.isLoading && uiState.users.isEmpty()) {
+        if (uiState.isLoading) {
             CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
         }
+    }
+}
 
-        if (uiState.showPinDialog) {
-            val selectedUserName = uiState.selectedUserId
-                ?.let { id -> uiState.users.firstOrNull { it.id == id }?.displayName }
-                .orEmpty()
+@Composable
+private fun UserTileButton(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    val accent = if (selected) scheme.primary else scheme.onSurfaceVariant
+    val background = if (selected) scheme.primaryContainer else scheme.surface
+    val shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 28.dp, bottomEnd = 10.dp)
 
-            PinDialog(
-                userName = selectedUserName,
-                pin = uiState.pin,
-                onPinChange = { viewModel.updatePin(it) },
-                onConfirm = { viewModel.verifyPinWithApi() },
-                onDismiss = { viewModel.cancelPinDialog() },
-                error = uiState.error,
-                isLoading = uiState.isLoading
+    Surface(
+        color = background,
+        contentColor = accent,
+        shape = shape,
+        border = BorderStroke(3.dp, accent),
+        modifier =
+            Modifier
+                .size(150.dp)
+                .then(if (enabled) Modifier else Modifier),
+        onClick = onClick,
+        enabled = enabled
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.icono),
+                contentDescription = null,
+                tint = Color.Unspecified,
+                modifier = Modifier.size(64.dp)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium,
+                color = accent,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
 }
-
-@Composable
-fun UserGridItem(
-    user: ApiUser,
-    borderColor: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val shape = remember { RoundedCornerShape(topStart = 80.dp, topEnd = 80.dp, bottomEnd = 80.dp, bottomStart = 0.dp) }
-
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .aspectRatio(0.85f)
-            .border(width = 5.dp, color = borderColor, shape = shape)
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            painter = painterResource(R.drawable.icono),
-            contentDescription = null,
-            tint = Color.Unspecified,
-            modifier = Modifier.size(130.dp)
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(
-            text = user.displayName,
-            textAlign = TextAlign.Center,
-            lineHeight = 24.sp,
-            style = MaterialTheme.typography.titleMedium.copy(fontSize = 22.sp)
-        )
-    }
-}
-
-@Composable
-fun PinDialog(
-    userName: String,
-    pin: String,
-    onPinChange: (String) -> Unit,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-    error: String?,
-    isLoading: Boolean
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = "PIN - $userName") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = pin,
-                    onValueChange = { newValue ->
-                        onPinChange(newValue.filter { it.isDigit() })
-                    },
-                    label = { Text("PIN") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    enabled = !isLoading,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                if (!error.isNullOrBlank()) {
-                    Text(text = error, color = MaterialTheme.colorScheme.error)
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = onConfirm, enabled = !isLoading) {
-                Text("Sartu")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isLoading) {
-                Text("Bekitu")
-            }
-        }
-    )
-}
-

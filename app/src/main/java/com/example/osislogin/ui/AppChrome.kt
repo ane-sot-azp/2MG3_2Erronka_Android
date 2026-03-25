@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -41,6 +42,12 @@ fun AppChrome(
     onLogoClick: () -> Unit,
     navigationIcon: ImageVector = Icons.Filled.Home,
     navigationIconContentDescription: String? = null,
+    showMiddleAction: Boolean = false,
+    middleIcon: ImageVector = Icons.Filled.DateRange,
+    middleIconResId: Int? = null,
+    middleIconContentDescription: String? = null,
+    onMiddleAction: () -> Unit = {},
+    middleBadgeCount: Int = 0,
     showRightAction: Boolean = true,
     rightIcon: ImageVector = Icons.Filled.Settings,
     rightIconResId: Int? = null,
@@ -116,6 +123,59 @@ fun AppChrome(
                             contentDescription = navigationIconContentDescription,
                             tint = Color.White
                         )
+                    }
+
+                    if (showMiddleAction) {
+                        if (middleBadgeCount > 0) {
+                            val label = if (middleBadgeCount > 99) "99+" else middleBadgeCount.toString()
+                            BadgedBox(
+                                badge = { Badge { Text(text = label) } }
+                            ) {
+                                Box(
+                                    modifier = Modifier.size(72.dp).clickable(onClick = onMiddleAction),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (middleIconResId != null) {
+                                        Icon(
+                                            modifier = Modifier.size(56.dp),
+                                            painter = painterResource(middleIconResId),
+                                            contentDescription = middleIconContentDescription,
+                                            tint = Color.White
+                                        )
+                                    } else {
+                                        Icon(
+                                            modifier = Modifier.size(56.dp),
+                                            imageVector = middleIcon,
+                                            contentDescription = middleIconContentDescription,
+                                            tint = Color.White
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier.size(72.dp).clickable(onClick = onMiddleAction),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (middleIconResId != null) {
+                                    Icon(
+                                        modifier = Modifier.size(56.dp),
+                                        painter = painterResource(middleIconResId),
+                                        contentDescription = middleIconContentDescription,
+                                        tint = Color.White
+                                    )
+                                } else {
+                                    Icon(
+                                        modifier = Modifier.size(56.dp),
+                                        imageVector = middleIcon,
+                                        contentDescription = middleIconContentDescription,
+                                        tint = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(72.dp))
                     }
 
                     if (showRightAction) {
@@ -195,7 +255,56 @@ fun AppChrome(
                         tint = Color.White
                     )
                 }
-                Spacer(modifier = Modifier.width(16.dp))
+                if (showMiddleAction) {
+                    if (middleBadgeCount > 0) {
+                        val label = if (middleBadgeCount > 99) "99+" else middleBadgeCount.toString()
+                        BadgedBox(
+                            badge = { Badge { Text(text = label) } }
+                        ) {
+                            Box(
+                                modifier = Modifier.size(72.dp).clickable(onClick = onMiddleAction),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (middleIconResId != null) {
+                                    Icon(
+                                        modifier = Modifier.size(56.dp),
+                                        painter = painterResource(middleIconResId),
+                                        contentDescription = middleIconContentDescription,
+                                        tint = Color.White
+                                    )
+                                } else {
+                                    Icon(
+                                        modifier = Modifier.size(56.dp),
+                                        imageVector = middleIcon,
+                                        contentDescription = middleIconContentDescription,
+                                        tint = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier.size(72.dp).clickable(onClick = onMiddleAction),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (middleIconResId != null) {
+                                Icon(
+                                    modifier = Modifier.size(56.dp),
+                                    painter = painterResource(middleIconResId),
+                                    contentDescription = middleIconContentDescription,
+                                    tint = Color.White
+                                )
+                            } else {
+                                Icon(
+                                    modifier = Modifier.size(56.dp),
+                                    imageVector = middleIcon,
+                                    contentDescription = middleIconContentDescription,
+                                    tint = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
                 if (showRightAction) {
                     if (rightBadgeCount > 0) {
                         val label = if (rightBadgeCount > 99) "99+" else rightBadgeCount.toString()

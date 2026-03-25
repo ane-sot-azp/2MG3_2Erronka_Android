@@ -25,11 +25,12 @@ data class KitchenPlatoStock(
     val izena: String,
     val kategoriaId: Int?,
     val kategoriaIzena: String?,
+    val prezioa: Double,
     val stock: Int
 )
 
 class KitchenPlatosStockViewModel : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://192.168.2.101:5000/api"
+    private val apiBaseUrlLanPrimary = "http://10.0.2.2:5101/api"
 
     private val _uiState = MutableStateFlow(KitchenPlatosStockUiState())
     val uiState: StateFlow<KitchenPlatosStockUiState> = _uiState
@@ -74,7 +75,7 @@ class KitchenPlatosStockViewModel : ViewModel() {
 
         viewModelScope.launch {
             try {
-                withContext(Dispatchers.IO) { applyPlatoStockAndIngredients(platoId, delta) }
+                withContext(Dispatchers.IO) { putProduktuaStock(existing, newStock) }
                 val after = _uiState.value
                 _uiState.value = after.copy(updatingIds = after.updatingIds - platoId)
             } catch (e: Exception) {
@@ -91,126 +92,13 @@ class KitchenPlatosStockViewModel : ViewModel() {
         }
     }
 
-    private data class PlateraOsagaiaLite(val osagaiaId: Int, val kopurua: Int)
-
-    private fun applyPlatoStockAndIngredients(platoId: Int, delta: Int) {
-        val relations = fetchPlateraOsagaiak(platoId)
-        val applied = ArrayList<Pair<Int, Int>>(relations.size)
-        try {
-            for (relation in relations) {
-                val ingredientDelta = -(delta * relation.kopurua)
-                if (ingredientDelta == 0) continue
-                patchOsagaiaStock(relation.osagaiaId, ingredientDelta)
-                applied.add(relation.osagaiaId to ingredientDelta)
-            }
-            patchPlatoStock(platoId, delta)
-        } catch (e: Exception) {
-            for ((osagaiaId, ingredientDelta) in applied.asReversed()) {
-                runCatching { patchOsagaiaStock(osagaiaId, -ingredientDelta) }
-            }
-            throw e
-        }
-    }
-
-    private fun fetchPlateraOsagaiak(platoId: Int): List<PlateraOsagaiaLite> {
-        val candidates =
-            apiBaseUrlCandidates().flatMap { baseUrl ->
-                listOf(
-                    "$baseUrl/Platerak/$platoId/osagaiak",
-                    "$baseUrl/platerak/$platoId/osagaiak"
-                )
-            }.distinct()
-
-        var lastError: String? = null
-        var body: String? = null
-        for (candidateUrl in candidates) {
-            try {
-                val (code, text) = httpGet(candidateUrl)
-                if (code !in 200..299) {
-                    lastError = "url=$candidateUrl code=$code body=${text.take(200)}"
-                    continue
-                }
-                body = text
-                break
-            } catch (e: Exception) {
-                lastError = "url=$candidateUrl error=${e.message ?: e.javaClass.simpleName}"
-            }
-        }
-
-        val finalBody = body ?: throw IllegalStateException("Ezin izan dira plateraren osagaiak kargatu ($lastError)")
-        val root = JSONTokener(finalBody).nextValue()
-        val array =
-            when (root) {
-                is JSONArray -> root
-                is JSONObject ->
-                    root.optJSONArray("osagaiak")
-                        ?: root.optJSONArray("Osagaiak")
-                        ?: root.optJSONArray("data")
-                        ?: root.optJSONArray("result")
-                        ?: root.optJSONArray("\$values")
-                        ?: JSONArray()
-                else -> JSONArray()
-            }
-
-        val result = ArrayList<PlateraOsagaiaLite>(array.length())
-        for (i in 0 until array.length()) {
-            val obj = array.optJSONObject(i) ?: continue
-            val osagaiaId =
-                obj.optInt(
-                    "osagaiakId",
-                    obj.optInt("OsagaiakId", obj.optInt("osagaiaId", obj.optInt("OsagaiaId", -1)))
-                ).takeIf { it > 0 } ?: continue
-            val kopurua = obj.optInt("kopurua", obj.optInt("Kopurua", 0))
-            if (kopurua == 0) continue
-            result.add(PlateraOsagaiaLite(osagaiaId = osagaiaId, kopurua = kopurua))
-        }
-        return result
-    }
-
-    private fun patchOsagaiaStock(osagaiaId: Int, delta: Int) {
-        val candidates =
-            apiBaseUrlCandidates().flatMap { baseUrl ->
-                listOf(
-                    "$baseUrl/Osagaiak/$osagaiaId/stock",
-                    "$baseUrl/osagaiak/$osagaiaId/stock"
-                )
-            }.distinct()
-
-        var lastError: String? = null
-        for (candidateUrl in candidates) {
-            try {
-                val url = URL(candidateUrl)
-                val conn =
-                    (url.openConnection() as HttpURLConnection).apply {
-                        requestMethod = "PATCH"
-                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                        setRequestProperty("Accept", "application/json")
-                        doOutput = true
-                        connectTimeout = 15000
-                        readTimeout = 15000
-                    }
-
-                val jsonBody = "{\"kopurua\":$delta}"
-                conn.outputStream.use { it.write(jsonBody.toByteArray(Charsets.UTF_8)) }
-
-                val code = conn.responseCode
-                if (code in 200..299) return
-                val body = (conn.errorStream ?: conn.inputStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-                lastError = "url=$candidateUrl code=$code body=${body.take(200)}"
-            } catch (e: Exception) {
-                lastError = "url=$candidateUrl error=${e.message ?: e.javaClass.simpleName}"
-            }
-        }
-
-        throw IllegalStateException("Ezin izan da osagaiaren stock-a eguneratu ($lastError)")
-    }
-
     private fun fetchPlatos(): List<KitchenPlatoStock> {
+        val kategoriaIzenaById = fetchKategoriaIzenaById()
         val candidates =
             apiBaseUrlCandidates().flatMap { baseUrl ->
                 listOf(
-                    "$baseUrl/Platerak",
-                    "$baseUrl/platerak"
+                    "$baseUrl/Produktuak",
+                    "$baseUrl/produktuak"
                 )
             }.distinct()
 
@@ -236,10 +124,11 @@ class KitchenPlatosStockViewModel : ViewModel() {
             when (root) {
                 is JSONArray -> root
                 is JSONObject ->
-                    root.optJSONArray("platerak")
-                        ?: root.optJSONArray("Platerak")
+                    root.optJSONArray("produktuak")
+                        ?: root.optJSONArray("Produktuak")
                         ?: root.optJSONArray("data")
                         ?: root.optJSONArray("result")
+                        ?: root.optJSONArray("\$values")
                         ?: JSONArray()
                 else -> JSONArray()
             }
@@ -250,33 +139,16 @@ class KitchenPlatosStockViewModel : ViewModel() {
             val id = obj.optInt("id", obj.optInt("Id", -1)).takeIf { it > 0 } ?: continue
             val izena = obj.optString("izena", obj.optString("Izena", "")).trim().ifBlank { "Platera $id" }
             val stock = obj.optInt("stock", obj.optInt("Stock", 0))
-            val kategoriaId =
-                obj.optInt(
-                    "kategoriaId",
-                    obj.optInt(
-                        "KategoriaId",
-                        obj.optInt(
-                            "kategoriakId",
-                            obj.optInt("KategoriakId", obj.optInt("kategoriak_id", obj.optInt("Kategoriak_Id", -1)))
-                        )
-                    )
-                ).takeIf { it > 0 }
-                    ?: run {
-                        val kategoriaObj =
-                            obj.optJSONObject("kategoria")
-                                ?: obj.optJSONObject("Kategoria")
-                                ?: obj.optJSONObject("kategoriak")
-                                ?: obj.optJSONObject("Kategoriak")
-                        kategoriaObj?.optInt("id", kategoriaObj.optInt("Id", -1))?.takeIf { it > 0 }
-                    }
-            val kategoriaIzena =
-                obj.optString("kategoriaIzena", obj.optString("KategoriaIzena", "")).trim().ifBlank { null }
+            val prezioa = obj.optDouble("prezioa", obj.optDouble("Prezioa", 0.0))
+            val kategoriaId = obj.optInt("motaId", obj.optInt("MotaId", -1)).takeIf { it > 0 }
+            val kategoriaIzena = kategoriaId?.let { kategoriaIzenaById[it] }
             result.add(
                 KitchenPlatoStock(
                     id = id,
                     izena = izena,
                     kategoriaId = kategoriaId,
                     kategoriaIzena = kategoriaIzena,
+                    prezioa = prezioa,
                     stock = stock
                 )
             )
@@ -284,38 +156,24 @@ class KitchenPlatosStockViewModel : ViewModel() {
         return result.sortedWith(compareBy<KitchenPlatoStock> { it.kategoriaId ?: Int.MAX_VALUE }.thenBy { it.izena })
     }
 
-    private fun patchPlatoStock(platoId: Int, delta: Int) {
-        val candidates =
-            apiBaseUrlCandidates().flatMap { baseUrl ->
-                listOf(
-                    "$baseUrl/Platerak/$platoId/stock",
-                    "$baseUrl/platerak/$platoId/stock"
-                )
-            }.distinct()
-
+    private fun putProduktuaStock(existing: KitchenPlatoStock, newStock: Int) {
+        val platoId = existing.id
         var lastError: String? = null
-        for (candidateUrl in candidates) {
+        for (baseUrl in apiBaseUrlCandidates()) {
+            val url = "${baseUrl.trimEnd('/')}/Produktuak/$platoId"
             try {
-                val url = URL(candidateUrl)
-                val conn =
-                    (url.openConnection() as HttpURLConnection).apply {
-                        requestMethod = "PATCH"
-                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                        setRequestProperty("Accept", "application/json")
-                        doOutput = true
-                        connectTimeout = 15000
-                        readTimeout = 15000
-                    }
-
-                val jsonBody = "{\"kopurua\":$delta}"
-                conn.outputStream.use { it.write(jsonBody.toByteArray(Charsets.UTF_8)) }
-
-                val code = conn.responseCode
+                val payload =
+                    JSONObject()
+                        .put("Id", existing.id)
+                        .put("Izena", existing.izena)
+                        .put("Prezioa", existing.prezioa)
+                        .put("MotaId", existing.kategoriaId ?: 0)
+                        .put("Stock", newStock)
+                val (code, body) = httpPutJson(url, payload)
                 if (code in 200..299) return
-                val body = (conn.errorStream ?: conn.inputStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-                lastError = "url=$candidateUrl code=$code body=${body.take(200)}"
+                lastError = "url=$url code=$code body=${body.take(200)}"
             } catch (e: Exception) {
-                lastError = "url=$candidateUrl error=${e.message ?: e.javaClass.simpleName}"
+                lastError = "url=$url error=${e.message ?: e.javaClass.simpleName}"
             }
         }
 
@@ -336,6 +194,60 @@ class KitchenPlatosStockViewModel : ViewModel() {
         return code to body
     }
 
+    private fun httpPutJson(url: String, jsonBody: JSONObject): Pair<Int, String> {
+        val conn =
+            (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "PUT"
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Accept", "application/json")
+                doOutput = true
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+        conn.outputStream.use { os -> os.write(jsonBody.toString().toByteArray(Charsets.UTF_8)) }
+        val code = conn.responseCode
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        return code to body
+    }
+
+    private fun fetchKategoriaIzenaById(): Map<Int, String> {
+        var lastError: String? = null
+        for (baseUrl in apiBaseUrlCandidates()) {
+            val url = "${baseUrl.trimEnd('/')}/Kategoriak"
+            try {
+                val (code, body) = httpGet(url)
+                if (code !in 200..299) {
+                    lastError = "url=$url code=$code body=${body.take(200)}"
+                    continue
+                }
+                val root = JSONTokener(body).nextValue()
+                val array =
+                    when (root) {
+                        is JSONArray -> root
+                        is JSONObject ->
+                            root.optJSONArray("data")
+                                ?: root.optJSONArray("result")
+                                ?: root.optJSONArray("\$values")
+                                ?: JSONArray()
+                        else -> JSONArray()
+                    }
+
+                val map = HashMap<Int, String>(array.length())
+                for (i in 0 until array.length()) {
+                    val obj = array.optJSONObject(i) ?: continue
+                    val id = obj.optInt("id", obj.optInt("Id", -1)).takeIf { it > 0 } ?: continue
+                    val name = obj.optString("izena", obj.optString("Izena", "")).trim()
+                    if (name.isNotBlank()) map[id] = name
+                }
+                return map
+            } catch (e: Exception) {
+                lastError = "url=$url error=${e.message ?: e.javaClass.simpleName}"
+            }
+        }
+        return emptyMap()
+    }
+
     private fun apiBaseUrlCandidates(): List<String> {
         val base = apiBaseUrlLanPrimary.trimEnd('/')
         val noApi =
@@ -344,7 +256,12 @@ class KitchenPlatosStockViewModel : ViewModel() {
             } else {
                 base
             }
-        return listOf(base, "$noApi/api").distinct()
+        return listOf(
+            base,
+            "$noApi/api",
+            "http://10.0.2.2:5101/api",
+            "http://172.16.238.14:5101/api"
+        ).distinct()
     }
 }
 
@@ -364,7 +281,7 @@ data class KitchenIngredienteStock(
 )
 
 class KitchenIngredientesStockViewModel : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://192.168.2.101:5000/api"
+    private val apiBaseUrlLanPrimary = "http://10.0.2.2:5101/api"
 
     private val _uiState = MutableStateFlow(KitchenIngredientesStockUiState())
     val uiState: StateFlow<KitchenIngredientesStockUiState> = _uiState
@@ -622,6 +539,11 @@ class KitchenIngredientesStockViewModel : ViewModel() {
             } else {
                 base
             }
-        return listOf(base, "$noApi/api").distinct()
+        return listOf(
+            base,
+            "$noApi/api",
+            "http://10.0.2.2:5101/api",
+            "http://172.16.238.14:5101/api"
+        ).distinct()
     }
 }

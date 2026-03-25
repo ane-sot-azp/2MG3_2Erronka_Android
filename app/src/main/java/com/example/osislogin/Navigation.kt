@@ -20,18 +20,21 @@ import com.example.osislogin.ui.LoginScreen
 import com.example.osislogin.ui.LoginViewModel
 import com.example.osislogin.ui.PlaterakScreen
 import com.example.osislogin.ui.PlaterakViewModel
+import com.example.osislogin.ui.ReservationsScreen
+import com.example.osislogin.ui.ReservationsViewModel
 import com.example.osislogin.util.SessionManager
 import kotlinx.coroutines.launch
 
 sealed class Route(val route: String) {
     object Login : Route("login")
     object Home : Route("home")
+    object Reservations : Route("reservations")
     object Categories : Route("categories/{tableId}") {
         fun create(tableId: Int) = "categories/$tableId"
     }
-    object Platerak : Route("platerak/{tableId}/{fakturaId}/{kategoriId}") {
-        fun create(tableId: Int, fakturaId: Int, kategoriId: Int) =
-                "platerak/$tableId/$fakturaId/$kategoriId"
+    object Platerak : Route("platerak/{tableId}/{erreserbaId}/{kategoriKey}") {
+        fun create(tableId: Int, erreserbaId: Int, kategoriKey: String) =
+                "platerak/$tableId/$erreserbaId/$kategoriKey"
     }
     object Chat : Route("chat")
 }
@@ -60,6 +63,9 @@ fun AppNavigation(database: AppDatabase, sessionManager: SessionManager, startDe
         chatViewModel.reset()
         navController.navigate(Route.Login.route) { popUpTo(Route.Home.route) { inclusive = true } }
     }
+    val goToReservations: () -> Unit = {
+        navController.navigate(Route.Reservations.route) { launchSingleTop = true }
+    }
 
     NavHost(navController = navController, startDestination = startDestination) {
         composable(Route.Login.route) {
@@ -80,10 +86,23 @@ fun AppNavigation(database: AppDatabase, sessionManager: SessionManager, startDe
                     viewModel = viewModel,
                     onLogout = logoutAndGoToLogin,
                     onChat = { navController.navigate(Route.Chat.route) },
+                    onReservations = goToReservations,
                     chatUnreadCount = chatUiState.unreadCount,
                     onTableClick = { tableId ->
                         navController.navigate(Route.Categories.create(tableId))
                     }
+            )
+        }
+
+        composable(Route.Reservations.route) {
+            val viewModel = remember { ReservationsViewModel(sessionManager) }
+            ReservationsScreen(
+                viewModel = viewModel,
+                onLogout = logoutAndGoToLogin,
+                onChat = { navController.navigate(Route.Chat.route) },
+                onHome = { navController.navigate(Route.Home.route) { launchSingleTop = true } },
+                onReservations = goToReservations,
+                chatUnreadCount = chatUiState.unreadCount
             )
         }
 
@@ -92,16 +111,17 @@ fun AppNavigation(database: AppDatabase, sessionManager: SessionManager, startDe
                 arguments = listOf(navArgument("tableId") { type = NavType.IntType })
         ) { backStackEntry ->
             val tableId = backStackEntry.arguments?.getInt("tableId") ?: 0
-            val viewModel = remember { CategoriesViewModel() }
+            val viewModel = remember { CategoriesViewModel(sessionManager) }
             CategoriesScreen(
                     tableId = tableId,
                     viewModel = viewModel,
                     onLogout = logoutAndGoToLogin,
                     onChat = { navController.navigate(Route.Chat.route) },
+                    onReservations = goToReservations,
                     chatUnreadCount = chatUiState.unreadCount,
                     onBack = { navController.popBackStack() },
-                    onCategorySelected = { tId, fakturaId, kategoriId ->
-                        navController.navigate(Route.Platerak.create(tId, fakturaId, kategoriId))
+                    onCategorySelected = { tId, erreserbaId, kategoriKey ->
+                        navController.navigate(Route.Platerak.create(tId, erreserbaId, kategoriKey))
                     }
             )
         }
@@ -111,21 +131,22 @@ fun AppNavigation(database: AppDatabase, sessionManager: SessionManager, startDe
                 arguments =
                         listOf(
                                 navArgument("tableId") { type = NavType.IntType },
-                                navArgument("fakturaId") { type = NavType.IntType },
-                                navArgument("kategoriId") { type = NavType.IntType }
+                                navArgument("erreserbaId") { type = NavType.IntType },
+                                navArgument("kategoriKey") { type = NavType.StringType }
                         )
         ) { backStackEntry ->
             val tableId = backStackEntry.arguments?.getInt("tableId") ?: 0
-            val fakturaId = backStackEntry.arguments?.getInt("fakturaId") ?: 0
-            val kategoriId = backStackEntry.arguments?.getInt("kategoriId") ?: 0
+            val erreserbaId = backStackEntry.arguments?.getInt("erreserbaId") ?: 0
+            val kategoriKey = backStackEntry.arguments?.getString("kategoriKey").orEmpty()
             val viewModel = remember { PlaterakViewModel() }
             PlaterakScreen(
                     tableId = tableId,
-                    fakturaId = fakturaId,
-                    kategoriId = kategoriId,
+                    erreserbaId = erreserbaId,
+                    kategoriKey = kategoriKey,
                     viewModel = viewModel,
                     onLogout = logoutAndGoToLogin,
                     onChat = { navController.navigate(Route.Chat.route) },
+                    onReservations = goToReservations,
                     chatUnreadCount = chatUiState.unreadCount,
                     onBack = {
                         if (!navController.popBackStack()) {
@@ -141,7 +162,8 @@ fun AppNavigation(database: AppDatabase, sessionManager: SessionManager, startDe
             ChatScreen(
                     viewModel = chatViewModel,
                     onLogout = logoutAndGoToLogin,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onReservations = goToReservations
             )
         }
     }

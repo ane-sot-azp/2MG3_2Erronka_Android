@@ -23,8 +23,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -35,7 +37,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -73,6 +79,7 @@ fun ReservationsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var editingReservation by remember { mutableStateOf<ReservationUiModel?>(null) }
+    var creatingReservation by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { viewModel.refresh() }
     LaunchedEffect(uiState.error) {
@@ -114,6 +121,7 @@ fun ReservationsScreen(
                     cal.add(Calendar.MONTH, 1)
                     viewModel.setMonth(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1)
                 },
+                onCreate = { creatingReservation = true },
                 onRefresh = viewModel::refresh
             )
 
@@ -156,6 +164,25 @@ fun ReservationsScreen(
             }
         )
     }
+
+    if (creatingReservation) {
+        CreateReservationDialog(
+            initialDateMillis = uiState.selectedDateMillis,
+            onDismiss = { creatingReservation = false },
+            onCreate = { name, phone, tableId, guests, dateMillis, hour, minute ->
+                viewModel.createReservation(
+                    bezeroIzena = name,
+                    telefonoa = phone,
+                    mahaiakId = tableId,
+                    guests = guests,
+                    dateMillis = dateMillis,
+                    hour = hour,
+                    minute = minute,
+                    onSuccess = { creatingReservation = false }
+                )
+            }
+        )
+    }
 }
 
 @Composable
@@ -164,6 +191,7 @@ private fun CalendarHeader(
     month: Int,
     onPrev: () -> Unit,
     onNext: () -> Unit,
+    onCreate: () -> Unit,
     onRefresh: () -> Unit
 ) {
     val label = remember(year, month) {
@@ -185,8 +213,13 @@ private fun CalendarHeader(
                 Icon(imageVector = Icons.Filled.ChevronRight, contentDescription = "Mes siguiente")
             }
         }
-        IconButton(onClick = onRefresh) {
-            Icon(imageVector = Icons.Filled.Refresh, contentDescription = "Actualizar")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onCreate) {
+                Icon(imageVector = Icons.Filled.Add, contentDescription = "Nueva reserva")
+            }
+            IconButton(onClick = onRefresh) {
+                Icon(imageVector = Icons.Filled.Refresh, contentDescription = "Actualizar")
+            }
         }
     }
 }
@@ -414,9 +447,25 @@ private fun EditReservationDialog(
     val pickerState = rememberDatePickerState(initialSelectedDateMillis = initialDateMillis)
 
     var dateMillis by remember { mutableStateOf(initialDateMillis) }
-    var timeText by remember { mutableStateOf("%02d:%02d".format(cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE))) }
     var guestsText by remember { mutableStateOf(reservation.pertsonaKopurua.toString()) }
     var tableText by remember { mutableStateOf(reservation.mahaiakId.toString()) }
+    val initialMinutes = remember { cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE) }
+    val initialShift =
+        remember {
+            when (initialMinutes) {
+                in (13 * 60) until (16 * 60) -> Shift.Comida
+                in (19 * 60) until (23 * 60) -> Shift.Cena
+                else -> if (initialMinutes < 19 * 60) Shift.Comida else Shift.Cena
+            }
+        }
+    var selectedShift by remember { mutableStateOf(initialShift) }
+    val initialSlot =
+        remember {
+            val slots = generateSlotMinutes(initialShift)
+            val rounded = (initialMinutes / 30) * 30
+            slots.minByOrNull { kotlin.math.abs(it - rounded) } ?: slots.first()
+        }
+    var selectedSlotStartMinutes by remember { mutableStateOf(initialSlot) }
 
     if (showDatePicker) {
         DatePickerDialog(
@@ -472,14 +521,31 @@ private fun EditReservationDialog(
                             Text(text = ymdKey(dateMillis), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    OutlinedTextField(
-                        value = timeText,
-                        onValueChange = { timeText = it.take(5) },
-                        label = { Text(text = "Hora (HH:mm)") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
                 }
+
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    val options = listOf(Shift.Comida, Shift.Cena)
+                    options.forEachIndexed { index, option ->
+                        SegmentedButton(
+                            selected = selectedShift == option,
+                            onClick = {
+                                selectedShift = option
+                                val slots = generateSlotMinutes(option)
+                                selectedSlotStartMinutes = slots.first()
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size)
+                        ) {
+                            Text(text = option.label)
+                        }
+                    }
+                }
+
+                val slots = remember(selectedShift) { generateSlotMinutes(selectedShift) }
+                ReservationTimeSlotPicker(
+                    slots = slots,
+                    selectedSlotStartMinutes = selectedSlotStartMinutes,
+                    onSlotSelected = { selectedSlotStartMinutes = it }
+                )
             }
         },
         confirmButton = {
@@ -487,12 +553,17 @@ private fun EditReservationDialog(
                 onClick = {
                     val tableId = tableText.toIntOrNull() ?: 0
                     val guests = guestsText.toIntOrNull() ?: 0
-                    val time = parseTime(timeText)
-                    if (tableId <= 0 || guests <= 0 || time == null) {
+                    if (tableId <= 0 || guests <= 0) {
                         Toast.makeText(context, "Datos inválidos", Toast.LENGTH_SHORT).show()
                         return@TextButton
                     }
-                    onSave(tableId, guests, dateMillis, time.first, time.second)
+                    onSave(
+                        tableId,
+                        guests,
+                        dateMillis,
+                        selectedSlotStartMinutes / 60,
+                        selectedSlotStartMinutes % 60
+                    )
                     onDismiss()
                 }
             ) { Text(text = "Guardar") }
@@ -503,14 +574,55 @@ private fun EditReservationDialog(
     )
 }
 
-private fun parseTime(text: String): Pair<Int, Int>? {
-    val trimmed = text.trim()
-    val parts = trimmed.split(":")
-    if (parts.size != 2) return null
-    val h = parts[0].toIntOrNull() ?: return null
-    val m = parts[1].toIntOrNull() ?: return null
-    if (h !in 0..23 || m !in 0..59) return null
-    return h to m
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ReservationTimeSlotPicker(
+    slots: List<Int>,
+    selectedSlotStartMinutes: Int,
+    onSlotSelected: (Int) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(text = "Hora")
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            slots.forEach { slotMinutes ->
+                val isSelected = slotMinutes == selectedSlotStartMinutes
+                if (isSelected) {
+                    Button(onClick = { onSlotSelected(slotMinutes) }) {
+                        Text(text = formatSlotMinutes(slotMinutes))
+                    }
+                } else {
+                    OutlinedButton(onClick = { onSlotSelected(slotMinutes) }) {
+                        Text(text = formatSlotMinutes(slotMinutes))
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun generateSlotMinutes(shift: Shift): List<Int> {
+    val (start, end) =
+        when (shift) {
+            Shift.Comida -> 13 * 60 to 16 * 60
+            Shift.Cena -> 19 * 60 to 23 * 60
+        }
+    val result = ArrayList<Int>()
+    var current = start
+    while (current < end) {
+        result.add(current)
+        current += 30
+    }
+    return result
+}
+
+private fun formatSlotMinutes(minutesFromMidnight: Int): String {
+    val h = minutesFromMidnight / 60
+    val m = minutesFromMidnight % 60
+    return "%02d:%02d".format(h, m)
 }
 
 private fun startOfDayMillis(millis: Long): Long {
@@ -553,4 +665,143 @@ private fun ymdKey(millis: Long): String {
 private fun monthName(month0: Int, locale: Locale): String {
     val symbols = DateFormatSymbols(locale)
     return symbols.months.getOrNull(month0)?.trim().orEmpty().replaceFirstChar { it.titlecase(locale) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CreateReservationDialog(
+    initialDateMillis: Long,
+    onDismiss: () -> Unit,
+    onCreate: (name: String, phone: String, tableId: Int, guests: Int, dateMillis: Long, hour: Int, minute: Int) -> Unit
+) {
+    val context = LocalContext.current
+    var nameText by remember { mutableStateOf("") }
+    var phoneText by remember { mutableStateOf("") }
+    var guestsText by remember { mutableStateOf("") }
+    var tableText by remember { mutableStateOf("") }
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    val initialLocalDateMillis = remember(initialDateMillis) { startOfDayMillis(initialDateMillis) }
+    val pickerState = rememberDatePickerState(initialSelectedDateMillis = initialLocalDateMillis)
+    var dateMillis by remember { mutableStateOf(initialLocalDateMillis) }
+
+    var selectedShift by remember { mutableStateOf(Shift.Comida) }
+    val initialSlot = remember { generateSlotMinutes(Shift.Comida).first() }
+    var selectedSlotStartMinutes by remember { mutableStateOf(initialSlot) }
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val millis = pickerState.selectedDateMillis
+                        if (millis != null) {
+                            dateMillis = utcMillisToLocalMidnightMillis(millis)
+                        }
+                        showDatePicker = false
+                    }
+                ) { Text(text = "OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text(text = "Cancelar") }
+            }
+        ) {
+            DatePicker(state = pickerState, showModeToggle = false)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = "Nueva reserva") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = nameText,
+                    onValueChange = { nameText = it.take(60) },
+                    label = { Text(text = "Nombre") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = phoneText,
+                    onValueChange = { phoneText = it.take(30) },
+                    label = { Text(text = "Teléfono") },
+                    singleLine = true
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = tableText,
+                        onValueChange = { tableText = it.filter { ch -> ch.isDigit() }.take(5) },
+                        label = { Text(text = "Mesa") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = guestsText,
+                        onValueChange = { guestsText = it.filter { ch -> ch.isDigit() }.take(3) },
+                        label = { Text(text = "Comensales") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth().clickable { showDatePicker = true }
+                ) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 14.dp)) {
+                        Text(text = ymdKey(dateMillis), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    val options = listOf(Shift.Comida, Shift.Cena)
+                    options.forEachIndexed { index, option ->
+                        SegmentedButton(
+                            selected = selectedShift == option,
+                            onClick = {
+                                selectedShift = option
+                                selectedSlotStartMinutes = generateSlotMinutes(option).first()
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size)
+                        ) {
+                            Text(text = option.label)
+                        }
+                    }
+                }
+
+                val slots = remember(selectedShift) { generateSlotMinutes(selectedShift) }
+                ReservationTimeSlotPicker(
+                    slots = slots,
+                    selectedSlotStartMinutes = selectedSlotStartMinutes,
+                    onSlotSelected = { selectedSlotStartMinutes = it }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val tableId = tableText.toIntOrNull() ?: 0
+                    val guests = guestsText.toIntOrNull() ?: 0
+                    if (tableId <= 0 || guests <= 0) {
+                        Toast.makeText(context, "Datos inválidos", Toast.LENGTH_SHORT).show()
+                        return@TextButton
+                    }
+                    onCreate(
+                        nameText,
+                        phoneText,
+                        tableId,
+                        guests,
+                        dateMillis,
+                        selectedSlotStartMinutes / 60,
+                        selectedSlotStartMinutes % 60
+                    )
+                }
+            ) { Text(text = "Crear") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(text = "Cancelar") }
+        }
+    )
 }

@@ -45,7 +45,7 @@ data class KitchenKomanda(
 )
 
 class KitchenOrdersViewModel : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://10.0.2.2:5101/api"
+    private val apiBaseUrlLanPrimary = "http://192.168.10.55:5101/api"
     private val apiTraceTag = "OSIS_KITCHEN_API"
 
     private val _uiState = MutableStateFlow(KitchenOrdersUiState())
@@ -1559,8 +1559,8 @@ class KitchenOrdersViewModel : ViewModel() {
         return listOf(
             base,
             "$noApi/api",
-            "http://10.0.2.2:5101/api",
-            "http://172.16.238.14:5101/api"
+            "http://192.168.10.55:5101/api",
+            "http://192.168.10.55:5101/api"
         ).distinct()
     }
 

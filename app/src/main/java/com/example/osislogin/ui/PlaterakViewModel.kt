@@ -33,7 +33,7 @@ data class PlaterakUiState(
 )
 
 class PlaterakViewModel : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://10.0.2.2:5101/api"
+    private val apiBaseUrlLanPrimary = "http://192.168.10.55:5101/api"
 
     private val _uiState = MutableStateFlow(PlaterakUiState())
     val uiState: StateFlow<PlaterakUiState> = _uiState
@@ -302,8 +302,8 @@ class PlaterakViewModel : ViewModel() {
         return listOf(
             base,
             "$noApi/api",
-            "http://10.0.2.2:5101/api",
-            "http://172.16.238.14:5101/api"
+            "http://192.168.10.55:5101/api",
+            "http://192.168.10.55:5101/api"
         ).distinct()
     }
 }

@@ -30,7 +30,7 @@ data class KitchenPlatoStock(
 )
 
 class KitchenPlatosStockViewModel : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://10.0.2.2:5101/api"
+    private val apiBaseUrlLanPrimary = "http://192.168.10.55:5101/api"
 
     private val _uiState = MutableStateFlow(KitchenPlatosStockUiState())
     val uiState: StateFlow<KitchenPlatosStockUiState> = _uiState
@@ -259,8 +259,8 @@ class KitchenPlatosStockViewModel : ViewModel() {
         return listOf(
             base,
             "$noApi/api",
-            "http://10.0.2.2:5101/api",
-            "http://172.16.238.14:5101/api"
+            "http://192.168.10.55:5101/api",
+            "http://192.168.10.55:5101/api"
         ).distinct()
     }
 }
@@ -281,7 +281,7 @@ data class KitchenIngredienteStock(
 )
 
 class KitchenIngredientesStockViewModel : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://10.0.2.2:5101/api"
+    private val apiBaseUrlLanPrimary = "http://192.168.10.55:5101/api"
 
     private val _uiState = MutableStateFlow(KitchenIngredientesStockUiState())
     val uiState: StateFlow<KitchenIngredientesStockUiState> = _uiState
@@ -542,8 +542,8 @@ class KitchenIngredientesStockViewModel : ViewModel() {
         return listOf(
             base,
             "$noApi/api",
-            "http://10.0.2.2:5101/api",
-            "http://172.16.238.14:5101/api"
+            "http://192.168.10.55:5101/api",
+            "http://192.168.10.55:5101/api"
         ).distinct()
     }
 }

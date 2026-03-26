@@ -6,6 +6,7 @@ import com.example.osislogin.util.SessionManager
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
@@ -51,6 +52,7 @@ data class TableSectionUiModel(
 data class HomeUiState(
     val selectedDateMillis: Long,
     val selectedShift: Shift,
+    val selectedSlotStartMinutes: Int,
     val sections: List<TableSectionUiModel> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
@@ -58,7 +60,7 @@ data class HomeUiState(
 )
 
 class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://10.0.2.2:5101/api"
+    private val apiBaseUrlLanPrimary = "http://192.168.10.55:5101/api"
     private val dateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.US)
     private val apiDateTimeFormatter =
         SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply {
@@ -95,23 +97,34 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
         val now = Date()
         val hour = SimpleDateFormat("H", Locale.US).format(now).toIntOrNull() ?: 0
         val shift = if (hour < 16) Shift.Comida else Shift.Cena
+        val slot = defaultSlotMinutesFor(shift, now)
         return HomeUiState(
             selectedDateMillis = now.time,
-            selectedShift = shift
+            selectedShift = shift,
+            selectedSlotStartMinutes = slot
         )
     }
 
     fun setSelectedDate(dateMillis: Long) {
         val current = _uiState.value
         if (current.selectedDateMillis == dateMillis) return
-        _uiState.value = current.copy(selectedDateMillis = dateMillis)
+        val slot = defaultSlotMinutesFor(current.selectedShift, Date())
+        _uiState.value = current.copy(selectedDateMillis = dateMillis, selectedSlotStartMinutes = slot)
         refresh()
     }
 
     fun setSelectedShift(shift: Shift) {
         val current = _uiState.value
         if (current.selectedShift == shift) return
-        _uiState.value = current.copy(selectedShift = shift)
+        val slot = defaultSlotMinutesFor(shift, Date())
+        _uiState.value = current.copy(selectedShift = shift, selectedSlotStartMinutes = slot)
+        refresh()
+    }
+
+    fun setSelectedSlotStartMinutes(minutes: Int) {
+        val current = _uiState.value
+        if (current.selectedSlotStartMinutes == minutes) return
+        _uiState.value = current.copy(selectedSlotStartMinutes = minutes)
         refresh()
     }
 
@@ -122,6 +135,7 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
             try {
                 val dateMillis = _uiState.value.selectedDateMillis
                 val shift = _uiState.value.selectedShift
+                val slot = _uiState.value.selectedSlotStartMinutes
 
                 val tablesFetch = withContext(Dispatchers.IO) { fetchMahaiak() }
                 val erreserbak = withContext(Dispatchers.IO) { fetchErreserbak() }
@@ -132,6 +146,7 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
                             erreserbak = erreserbak,
                             selectedDateMillis = dateMillis,
                             selectedShift = shift,
+                            selectedSlotStartMinutes = slot,
                             arrivedReservationIds = arrivedReservationIds
                         )
                     }
@@ -178,13 +193,25 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
     fun createReservationNow(
         tableId: Int,
         guestCount: Int,
+        slotStartMinutes: Int,
         onSuccess: (Int) -> Unit
     ) {
         viewModelScope.launch {
             val current = _uiState.value
             _uiState.value = current.copy(isLoading = true, error = null, debug = null)
             try {
-                val reservationId = withContext(Dispatchers.IO) { postReservationNow(tableId = tableId, guestCount = guestCount) }
+                val dateMillis = current.selectedDateMillis
+                val shift = current.selectedShift
+                val reservationId =
+                    withContext(Dispatchers.IO) {
+                        postReservationNow(
+                            tableId = tableId,
+                            guestCount = guestCount,
+                            selectedDateMillis = dateMillis,
+                            selectedShift = shift,
+                            selectedSlotStartMinutes = slotStartMinutes
+                        )
+                    }
                 _uiState.value = _uiState.value.copy(isLoading = false)
                 refresh()
                 onSuccess(reservationId)
@@ -331,6 +358,7 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
         erreserbak: List<ApiErreserba>,
         selectedDateMillis: Long,
         selectedShift: Shift,
+        selectedSlotStartMinutes: Int,
         arrivedReservationIds: Set<Int>
     ): TableStateResult {
         val selectedYmd = dateFormatter.format(Date(selectedDateMillis))
@@ -344,10 +372,11 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
                 .mapNotNull { e ->
                     val ymd = normalizeDateYmd(e.egunaOrdua) ?: return@mapNotNull null
                     if (ymd != selectedYmd) return@mapNotNull null
-                    val hour = extractHour(e.egunaOrdua) ?: 0
-                    val shift = if (hour < 16) Shift.Comida else Shift.Cena
-                    if (shift != selectedShift) return@mapNotNull null
                     val startMillis = parseMillis(e.egunaOrdua) ?: 0L
+                    val slot = slotStartMinutesFromMillis(startMillis) ?: return@mapNotNull null
+                    val shift = shiftFromSlotMinutes(slot) ?: return@mapNotNull null
+                    if (shift != selectedShift) return@mapNotNull null
+                    if (slot != selectedSlotStartMinutes) return@mapNotNull null
                     Triple(e, ymd, startMillis)
                 }
 
@@ -461,18 +490,27 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
         throw IllegalStateException("Ezin izan da eskariak kargatu ($lastError)")
     }
 
-    private suspend fun postReservationNow(tableId: Int, guestCount: Int): Int {
+    private suspend fun postReservationNow(
+        tableId: Int,
+        guestCount: Int,
+        selectedDateMillis: Long,
+        selectedShift: Shift,
+        selectedSlotStartMinutes: Int
+    ): Int {
         val now = Date()
         val langileaId = sessionManager.userId.first() ?: 0
         val name = "Local"
-        val nowIso = apiDateTimeFormatter.format(now)
+        val targetIso =
+            apiDateTimeFormatter.format(
+                reservationDateTimeFromSlot(selectedDateMillis, selectedShift, selectedSlotStartMinutes, now)
+            )
 
         val dto =
             JSONObject()
                 .put("BezeroIzena", name)
                 .put("Telefonoa", "")
                 .put("PertsonaKopurua", guestCount)
-                .put("EgunaOrdua", nowIso)
+                .put("EgunaOrdua", targetIso)
                 .put("PrezioTotala", 0.0)
                 .put("FakturaRuta", "")
                 .put("LangileaId", langileaId)
@@ -496,6 +534,62 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
             }
         }
         throw IllegalStateException("No se pudo crear la reserva ($lastError)")
+    }
+
+    private fun reservationDateTimeFromSlot(
+        selectedDateMillis: Long,
+        selectedShift: Shift,
+        selectedSlotStartMinutes: Int,
+        now: Date
+    ): Date {
+        val slotShift = shiftFromSlotMinutes(selectedSlotStartMinutes)
+        val safeSlot =
+            if (slotShift == selectedShift) {
+                selectedSlotStartMinutes
+            } else {
+                defaultSlotMinutesFor(selectedShift, now)
+            }
+
+        val cal =
+            Calendar.getInstance(TimeZone.getDefault()).apply {
+                timeInMillis = selectedDateMillis
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+                add(Calendar.MINUTE, safeSlot)
+            }
+        return cal.time
+    }
+
+    private fun defaultSlotMinutesFor(shift: Shift, now: Date): Int {
+        val nowCal = Calendar.getInstance(TimeZone.getDefault()).apply { time = now }
+        val nowMinutes = nowCal.get(Calendar.HOUR_OF_DAY) * 60 + nowCal.get(Calendar.MINUTE)
+
+        val (start, end) =
+            when (shift) {
+                Shift.Comida -> 13 * 60 to 16 * 60
+                Shift.Cena -> 19 * 60 to 23 * 60
+            }
+
+        val clamped = nowMinutes.coerceIn(start, end - 1)
+        val rounded = ((clamped - start + 29) / 30) * 30 + start
+        return if (rounded >= end) start else rounded
+    }
+
+    private fun slotStartMinutesFromMillis(millis: Long): Int? {
+        val cal = Calendar.getInstance(TimeZone.getDefault()).apply { timeInMillis = millis }
+        val minutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+        val slot = (minutes / 30) * 30
+        return slot.takeIf { shiftFromSlotMinutes(it) != null }
+    }
+
+    private fun shiftFromSlotMinutes(slotStartMinutes: Int): Shift? {
+        return when (slotStartMinutes) {
+            in (13 * 60) until (16 * 60) -> Shift.Comida
+            in (19 * 60) until (23 * 60) -> Shift.Cena
+            else -> null
+        }
     }
 
     private fun normalizeDateYmd(iso: String?): String? {
@@ -580,8 +674,8 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
         return listOf(
             base,
             "$noApi/api",
-            "http://10.0.2.2:5101/api",
-            "http://172.16.238.14:5101/api"
+            "http://192.168.10.55:5101/api",
+            "http://192.168.10.55:5101/api"
         ).distinct()
     }
 }

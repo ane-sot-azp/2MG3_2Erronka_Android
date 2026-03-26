@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -77,6 +78,7 @@ fun HomeScreen(
     val context = LocalContext.current
     var reserveDialogTable by remember { mutableStateOf<TableUiModel?>(null) }
     var reserveDialogGuestCount by remember { mutableStateOf("") }
+    var reserveDialogSlotMinutes by remember { mutableStateOf<Int?>(null) }
 
     LaunchedEffect(Unit) { viewModel.refresh() }
     LaunchedEffect(uiState.error) {
@@ -101,8 +103,10 @@ fun HomeScreen(
             DateShiftHeader(
                 selectedDateMillis = uiState.selectedDateMillis,
                 selectedShift = uiState.selectedShift,
+                selectedSlotStartMinutes = uiState.selectedSlotStartMinutes,
                 onDateSelected = viewModel::setSelectedDate,
                 onShiftSelected = viewModel::setSelectedShift,
+                onSlotSelected = viewModel::setSelectedSlotStartMinutes,
                 onRefresh = viewModel::refresh
             )
 
@@ -133,6 +137,7 @@ fun HomeScreen(
                                     TableAvailability.Libre -> {
                                         reserveDialogTable = table
                                         reserveDialogGuestCount = ""
+                                        reserveDialogSlotMinutes = uiState.selectedSlotStartMinutes
                                     }
                                     TableAvailability.Reservada -> {
                                         viewModel.markReservedAsArrived(table.id)
@@ -161,6 +166,14 @@ fun HomeScreen(
                         label = { Text(text = "Comensales") },
                         singleLine = true
                     )
+
+                    val slots = remember(uiState.selectedShift) { generateSlotMinutes(uiState.selectedShift) }
+                    val selectedSlot = reserveDialogSlotMinutes ?: uiState.selectedSlotStartMinutes
+                    TimeSlotPicker(
+                        slots = slots,
+                        selectedSlotStartMinutes = selectedSlot,
+                        onSlotSelected = { reserveDialogSlotMinutes = it }
+                    )
                 }
             },
             confirmButton = {
@@ -172,12 +185,15 @@ fun HomeScreen(
                             return@TextButton
                         }
                         val tableId = table.id
+                        val slot = reserveDialogSlotMinutes ?: uiState.selectedSlotStartMinutes
                         viewModel.createReservationNow(
                             tableId = tableId,
                             guestCount = guests,
+                            slotStartMinutes = slot,
                             onSuccess = {
                                 reserveDialogTable = null
                                 reserveDialogGuestCount = ""
+                                reserveDialogSlotMinutes = null
                                 onTableClick(tableId)
                             }
                         )
@@ -189,6 +205,7 @@ fun HomeScreen(
                     onClick = {
                         reserveDialogTable = null
                         reserveDialogGuestCount = ""
+                        reserveDialogSlotMinutes = null
                     }
                 ) { Text(text = "Cancelar") }
             }
@@ -221,8 +238,10 @@ private fun SectionFlowRow(
 private fun DateShiftHeader(
     selectedDateMillis: Long,
     selectedShift: Shift,
+    selectedSlotStartMinutes: Int,
     onDateSelected: (Long) -> Unit,
     onShiftSelected: (Shift) -> Unit,
+    onSlotSelected: (Int) -> Unit,
     onRefresh: () -> Unit
 ) {
     var showPicker by remember { mutableStateOf(false) }
@@ -286,7 +305,65 @@ private fun DateShiftHeader(
                 }
             }
         }
+
+        val slots = remember(selectedShift) { generateSlotMinutes(selectedShift) }
+        TimeSlotPicker(
+            slots = slots,
+            selectedSlotStartMinutes = selectedSlotStartMinutes,
+            onSlotSelected = onSlotSelected
+        )
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TimeSlotPicker(
+    slots: List<Int>,
+    selectedSlotStartMinutes: Int,
+    onSlotSelected: (Int) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(text = "Hora")
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            slots.forEach { slotMinutes ->
+                val isSelected = slotMinutes == selectedSlotStartMinutes
+                if (isSelected) {
+                    Button(onClick = { onSlotSelected(slotMinutes) }) {
+                        Text(text = formatSlotMinutes(slotMinutes))
+                    }
+                } else {
+                    OutlinedButton(onClick = { onSlotSelected(slotMinutes) }) {
+                        Text(text = formatSlotMinutes(slotMinutes))
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun generateSlotMinutes(shift: Shift): List<Int> {
+    val (start, end) =
+        when (shift) {
+            Shift.Comida -> 13 * 60 to 16 * 60
+            Shift.Cena -> 19 * 60 to 23 * 60
+        }
+    val result = ArrayList<Int>()
+    var current = start
+    while (current < end) {
+        result.add(current)
+        current += 30
+    }
+    return result
+}
+
+private fun formatSlotMinutes(minutesFromMidnight: Int): String {
+    val h = minutesFromMidnight / 60
+    val m = minutesFromMidnight % 60
+    return "%02d:%02d".format(h, m)
 }
 
 @Composable

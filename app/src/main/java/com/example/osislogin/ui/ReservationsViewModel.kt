@@ -13,6 +13,7 @@ import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -41,7 +42,7 @@ data class ReservationsUiState(
 )
 
 class ReservationsViewModel(private val sessionManager: SessionManager) : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://10.0.2.2:5101/api"
+    private val apiBaseUrlLanPrimary = "http://192.168.10.55:5101/api"
     private val apiDateTimeFormatter =
         SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply {
             timeZone = TimeZone.getDefault()
@@ -143,6 +144,47 @@ class ReservationsViewModel(private val sessionManager: SessionManager) : ViewMo
                 }
                 val reservations = withContext(Dispatchers.IO) { fetchReservations() }
                 _uiState.value = _uiState.value.copy(isLoading = false, reservations = reservations)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: e.javaClass.simpleName)
+            }
+        }
+    }
+
+    fun createReservation(
+        bezeroIzena: String,
+        telefonoa: String,
+        mahaiakId: Int,
+        guests: Int,
+        dateMillis: Long,
+        hour: Int,
+        minute: Int,
+        onSuccess: (Int) -> Unit
+    ) {
+        viewModelScope.launch {
+            val current = _uiState.value
+            _uiState.value = current.copy(isLoading = true, error = null)
+            try {
+                val reservationId =
+                    withContext(Dispatchers.IO) {
+                        val langileaId = sessionManager.userId.first() ?: 0
+                        val cal = Calendar.getInstance()
+                        cal.timeInMillis = startOfDayMillis(dateMillis)
+                        cal.set(Calendar.HOUR_OF_DAY, hour)
+                        cal.set(Calendar.MINUTE, minute)
+                        cal.set(Calendar.SECOND, 0)
+                        cal.set(Calendar.MILLISECOND, 0)
+                        postReservation(
+                            bezeroIzena = bezeroIzena,
+                            telefonoa = telefonoa,
+                            pertsonaKopurua = guests,
+                            egunaOrduaMillis = cal.timeInMillis,
+                            mahaiakId = mahaiakId,
+                            langileaId = langileaId
+                        )
+                    }
+                val reservations = withContext(Dispatchers.IO) { fetchReservations() }
+                _uiState.value = _uiState.value.copy(isLoading = false, reservations = reservations)
+                onSuccess(reservationId)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: e.javaClass.simpleName)
             }
@@ -263,6 +305,44 @@ class ReservationsViewModel(private val sessionManager: SessionManager) : ViewMo
         throw IllegalStateException("No se pudo editar la reserva ($lastError)")
     }
 
+    private fun postReservation(
+        bezeroIzena: String,
+        telefonoa: String,
+        pertsonaKopurua: Int,
+        egunaOrduaMillis: Long,
+        mahaiakId: Int,
+        langileaId: Int
+    ): Int {
+        val dto =
+            JSONObject()
+                .put("BezeroIzena", bezeroIzena)
+                .put("Telefonoa", telefonoa)
+                .put("PertsonaKopurua", pertsonaKopurua)
+                .put("EgunaOrdua", apiDateTimeFormatter.format(Date(egunaOrduaMillis)))
+                .put("PrezioTotala", 0.0)
+                .put("FakturaRuta", "")
+                .put("LangileaId", langileaId)
+                .put("MahaiakId", mahaiakId)
+
+        var lastError: String? = null
+        for (baseUrl in apiBaseUrlCandidates()) {
+            val url = "${baseUrl.trimEnd('/')}/Erreserbak"
+            try {
+                val (code, body) = httpPostJson(url, dto)
+                if (code in 200..299) {
+                    val obj = runCatching { JSONTokener(body).nextValue() as? JSONObject }.getOrNull()
+                    val id = obj?.optInt("erreserbaId", obj.optInt("ErreserbaId", -1)) ?: -1
+                    if (id > 0) return id
+                    return 1
+                }
+                lastError = "url=$url code=$code body=${body.take(250)}"
+            } catch (e: Exception) {
+                lastError = "url=$url error=${e.message ?: e.javaClass.simpleName}"
+            }
+        }
+        throw IllegalStateException("No se pudo crear la reserva ($lastError)")
+    }
+
     private fun startOfDayMillis(millis: Long): Long {
         val cal = Calendar.getInstance()
         cal.timeInMillis = millis
@@ -308,6 +388,27 @@ class ReservationsViewModel(private val sessionManager: SessionManager) : ViewMo
         return code to body
     }
 
+    private fun httpPostJson(url: String, bodyJson: JSONObject): Pair<Int, String> {
+        val conn =
+            (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Accept", "application/json")
+                doOutput = true
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+
+        conn.outputStream.use { os ->
+            os.write(bodyJson.toString().toByteArray(Charsets.UTF_8))
+        }
+
+        val code = conn.responseCode
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        return code to body
+    }
+
     private fun apiBaseUrlCandidates(): List<String> {
         val base = apiBaseUrlLanPrimary.trimEnd('/')
         val noApi =
@@ -319,8 +420,8 @@ class ReservationsViewModel(private val sessionManager: SessionManager) : ViewMo
         return listOf(
             base,
             "$noApi/api",
-            "http://10.0.2.2:5101/api",
-            "http://172.16.238.14:5101/api"
+            "http://192.168.10.55:5101/api",
+            "http://192.168.10.55:5101/api"
         ).distinct()
     }
 }

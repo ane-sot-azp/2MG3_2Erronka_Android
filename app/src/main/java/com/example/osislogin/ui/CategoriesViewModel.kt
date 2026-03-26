@@ -38,7 +38,7 @@ data class CategoriesUiState(
 )
 
 class CategoriesViewModel(private val sessionManager: SessionManager) : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://10.0.2.2:5101/api"
+    private val apiBaseUrlLanPrimary = "http://192.168.10.55:5101/api"
 
     private val _uiState = MutableStateFlow(CategoriesUiState())
     val uiState: StateFlow<CategoriesUiState> = _uiState
@@ -354,8 +354,8 @@ class CategoriesViewModel(private val sessionManager: SessionManager) : ViewMode
         return listOf(
             base,
             "$noApi/api",
-            "http://10.0.2.2:5101/api",
-            "http://172.16.238.14:5101/api"
+            "http://192.168.10.55:5101/api",
+            "http://192.168.10.55:5101/api"
         ).distinct()
     }
 }

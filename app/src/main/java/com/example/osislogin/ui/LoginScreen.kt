@@ -142,6 +142,21 @@ fun LoginScreen(
                     if (uiState.isLoadingUsers) {
                         Spacer(modifier = Modifier.height(8.dp))
                         CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    } else if (!uiState.error.isNullOrBlank() && uiState.selectableUsers.isEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = uiState.error ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { viewModel.loadSelectableUsers() },
+                            enabled = !uiState.isLoading
+                        ) {
+                            Text("Reintentar")
+                        }
                     } else if (uiState.selectableUsers.isEmpty()) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(

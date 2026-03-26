@@ -43,7 +43,7 @@ class LoginViewModel(
     private val database: AppDatabase,
     private val sessionManager: SessionManager
 ) : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://10.0.2.2:5101/api"
+    private val apiBaseUrlLanPrimary = "http://192.168.10.55:5101/api"
 
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState
@@ -184,8 +184,8 @@ class LoginViewModel(
         return listOf(
             base,
             "$noApi/api",
-            "http://10.0.2.2:5101/api",
-            "http://172.16.238.14:5101/api"
+            "http://192.168.10.55:5101/api",
+            "http://192.168.10.55:5101/api"
         ).distinct()
     }
 
@@ -206,12 +206,12 @@ class LoginViewModel(
                 )
             }.distinct()
 
-        var lastError: String? = null
+        val errors = ArrayList<String>(candidates.size)
         for (candidateUrl in candidates) {
             try {
                 val (code, body) = httpGet(candidateUrl)
                 if (code !in 200..299) {
-                    lastError = "url=$candidateUrl code=$code body=${body.take(200)}"
+                    errors.add("url=$candidateUrl code=$code body=${body.take(200)}")
                     continue
                 }
                 val root = JSONTokener(body).nextValue()
@@ -263,10 +263,15 @@ class LoginViewModel(
                 }
                 return out.distinctBy { it.kodea }.sortedWith(compareBy<LoginUserOption> { it.label.lowercase() }.thenBy { it.kodea })
             } catch (e: Exception) {
-                lastError = "url=$candidateUrl error=${e.message ?: e.javaClass.simpleName}"
+                errors.add("url=$candidateUrl error=${e.message ?: e.javaClass.simpleName}")
             }
         }
-        throw IllegalStateException("Ezin izan da langileen zerrenda kargatu ($lastError)")
+        val tail = errors.takeLast(4).joinToString("\n")
+        throw IllegalStateException(
+            "No se ha podido cargar la lista de empleados.\n" +
+                "Comprueba que la API está arrancada y accesible desde este dispositivo.\n" +
+                "Últimos intentos:\n$tail"
+        )
     }
 
     private fun extractLanpostuaId(obj: JSONObject): Int? {

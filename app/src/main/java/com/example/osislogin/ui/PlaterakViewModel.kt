@@ -243,31 +243,10 @@ class PlaterakViewModel : ViewModel() {
         val updated = target.produktuak.mapNotNull { p ->
             if (p.produktuaId != produktuaId) return@mapNotNull p
             val nextQty = p.kantitatea - 1
-            if (nextQty <= 0) null else p.copy(kantitatea = nextQty)
+            p.copy(kantitatea = nextQty.coerceAtLeast(0))
         }
 
-        if (updated.isEmpty()) {
-            var lastError: String? = null
-            val deleteCandidates =
-                apiBaseUrlCandidates().flatMap { baseUrl ->
-                    listOf(
-                        "${baseUrl.trimEnd('/')}/Eskariak/${target.id}",
-                        "${baseUrl.trimEnd('/')}/eskariak/${target.id}"
-                    )
-                }.distinct()
-            for (url in deleteCandidates) {
-                try {
-                    val (code, body) = httpDelete(url)
-                    if (code in 200..299) return
-                    lastError = "url=$url code=$code body=${body.take(250)}"
-                } catch (e: Exception) {
-                    lastError = "url=$url error=${e.message ?: e.javaClass.simpleName}"
-                }
-            }
-            throw IllegalStateException("Ezin izan da eskaria ezabatu ($lastError)")
-        }
-
-        val newTotalPrice = updated.sumOf { it.prezioa * it.kantitatea }
+        val newTotalPrice = updated.sumOf { it.prezioa * it.kantitatea.coerceAtLeast(0) }
         val produktuakArray = JSONArray()
         for (p in updated) {
             produktuakArray.put(
@@ -301,6 +280,25 @@ class PlaterakViewModel : ViewModel() {
                 lastError = "url=$url code=$code body=${body.take(250)}"
             } catch (e: Exception) {
                 lastError = "url=$url error=${e.message ?: e.javaClass.simpleName}"
+            }
+        }
+
+        if (updated.all { it.kantitatea <= 0 }) {
+            val deleteCandidates =
+                apiBaseUrlCandidates().flatMap { baseUrl ->
+                    listOf(
+                        "${baseUrl.trimEnd('/')}/Eskariak/${target.id}",
+                        "${baseUrl.trimEnd('/')}/eskariak/${target.id}"
+                    )
+                }.distinct()
+            for (url in deleteCandidates) {
+                try {
+                    val (code, body) = httpDelete(url)
+                    if (code in 200..299) return
+                    lastError = "url=$url code=$code body=${body.take(250)}"
+                } catch (e: Exception) {
+                    lastError = "url=$url error=${e.message ?: e.javaClass.simpleName}"
+                }
             }
         }
         throw IllegalStateException("Ezin izan da eskaria eguneratu ($lastError)")

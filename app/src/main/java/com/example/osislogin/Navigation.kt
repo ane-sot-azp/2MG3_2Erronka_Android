@@ -18,6 +18,8 @@ import com.example.osislogin.ui.HomeScreen
 import com.example.osislogin.ui.HomeViewModel
 import com.example.osislogin.ui.LoginScreen
 import com.example.osislogin.ui.LoginViewModel
+import com.example.osislogin.ui.OrdersHistoryScreen
+import com.example.osislogin.ui.OrdersHistoryViewModel
 import com.example.osislogin.ui.PlaterakScreen
 import com.example.osislogin.ui.PlaterakViewModel
 import com.example.osislogin.ui.ReservationsScreen
@@ -35,6 +37,9 @@ sealed class Route(val route: String) {
     object Platerak : Route("platerak/{tableId}/{erreserbaId}/{kategoriKey}") {
         fun create(tableId: Int, erreserbaId: Int, kategoriKey: String) =
                 "platerak/$tableId/$erreserbaId/$kategoriKey"
+    }
+    object OrdersHistory : Route("ordersHistory/{tableId}/{erreserbaId}") {
+        fun create(tableId: Int, erreserbaId: Int) = "ordersHistory/$tableId/$erreserbaId"
     }
     object Chat : Route("chat")
 }
@@ -126,9 +131,35 @@ fun AppNavigation(database: AppDatabase, sessionManager: SessionManager, startDe
                     onReservations = goToReservations,
                     chatUnreadCount = chatUiState.unreadCount,
                     onBack = { navController.popBackStack() },
+                    onTicketClick = { tId, eId ->
+                        navController.navigate(Route.OrdersHistory.create(tId, eId))
+                    },
                     onCategorySelected = { tId, erreserbaId, kategoriKey ->
                         navController.navigate(Route.Platerak.create(tId, erreserbaId, kategoriKey))
                     }
+            )
+        }
+
+        composable(
+            route = Route.OrdersHistory.route,
+            arguments =
+                listOf(
+                    navArgument("tableId") { type = NavType.IntType },
+                    navArgument("erreserbaId") { type = NavType.IntType }
+                )
+        ) { backStackEntry ->
+            val tableId = backStackEntry.arguments?.getInt("tableId") ?: 0
+            val erreserbaId = backStackEntry.arguments?.getInt("erreserbaId") ?: 0
+            val viewModel = remember { OrdersHistoryViewModel(sessionManager) }
+            OrdersHistoryScreen(
+                tableId = tableId,
+                erreserbaId = erreserbaId,
+                viewModel = viewModel,
+                onLogout = logoutAndGoToLogin,
+                onChat = { navController.navigate(Route.Chat.route) },
+                onReservations = goToReservations,
+                chatUnreadCount = chatUiState.unreadCount,
+                onBack = { navController.popBackStack() }
             )
         }
 

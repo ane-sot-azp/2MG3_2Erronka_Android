@@ -11,17 +11,13 @@ import androidx.compose.material.icons.filled.TableRestaurant
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -41,11 +37,10 @@ fun CategoriesScreen(
     onReservations: () -> Unit,
     chatUnreadCount: Int,
     onBack: () -> Unit,
+    onTicketClick: (tableId: Int, erreserbaId: Int) -> Unit,
     onCategorySelected: (tableId: Int, erreserbaId: Int, kategoriKey: String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var goBackAfterClose by remember { mutableStateOf(false) }
-    var showClosePreviewDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(tableId, initialErreserbaId) {
         viewModel.load(tableId, initialErreserbaId)
@@ -69,52 +64,6 @@ fun CategoriesScreen(
             val orange = remember { Color(0xFFF3863A) }
             val shape = remember { RoundedCornerShape(18.dp) }
             val elevation = 10.dp
-
-            if (showClosePreviewDialog) {
-                val erreserbaId = uiState.erreserbaId ?: 0
-                AlertDialog(
-                    onDismissRequest = { showClosePreviewDialog = false },
-                    title = { Text(text = "Erreserba itxi") },
-                    text = {
-                        val lines = uiState.closePreviewLines
-                        val total = uiState.closePreviewTotal
-                        val totalText =
-                            total?.let { totala -> "Totala: ${"%.2f".format(totala)}€" }
-
-                        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            when {
-                                uiState.isClosePreviewLoading -> Text(text = "Kontsumizioak kargatzen…")
-                                lines.isEmpty() -> Text(text = "Ez daude kontsumizioak")
-                                else -> {
-                                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        lines.forEach { line ->
-                                            Text(text = "x${line.qty} · ${line.name}")
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (!totalText.isNullOrBlank()) {
-                                Text(text = totalText)
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                if (!uiState.isClosePreviewLoading && erreserbaId > 0) {
-                                    viewModel.closeErreserba(erreserbaId)
-                                    goBackAfterClose = true
-                                    showClosePreviewDialog = false
-                                }
-                            }
-                        ) { Text("Faktura itxi") }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showClosePreviewDialog = false }) { Text("Jarraitu") }
-                    }
-                )
-            }
 
             if (uiState.error != null && !uiState.isLoading) {
                 Text(
@@ -228,8 +177,7 @@ fun CategoriesScreen(
                                     .clickable {
                                         val erreserbaId = uiState.erreserbaId ?: return@clickable
                                         if (erreserbaId <= 0) return@clickable
-                                        showClosePreviewDialog = true
-                                        viewModel.loadClosePreview(erreserbaId)
+                                        onTicketClick(tableId, erreserbaId)
                                     }
                         ) {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -249,11 +197,6 @@ fun CategoriesScreen(
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             }
 
-            LaunchedEffect(goBackAfterClose, uiState.isLoading, uiState.error) {
-                if (goBackAfterClose && !uiState.isLoading && uiState.error.isNullOrBlank()) {
-                    onBack()
-                }
-            }
         }
     }
 }

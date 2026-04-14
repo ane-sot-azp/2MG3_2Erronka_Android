@@ -80,7 +80,7 @@ fun ChatScreen(
         navigationIcon = Icons.AutoMirrored.Filled.ArrowBack,
         navigationIconContentDescription = "Atzera",
         showMiddleAction = true,
-        middleIconContentDescription = "Reservas",
+        middleIconContentDescription = "Erreserbak",
         onMiddleAction = onReservations,
         showRightAction = false
     ) { contentModifier ->

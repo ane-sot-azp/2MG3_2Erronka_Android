@@ -29,7 +29,7 @@ data class ChatUiState(
 )
 
 class ChatViewModel(userName: String) : ViewModel() {
-    private val hostCandidates = listOf("192.168.2.101", "192.168.1.150")
+    private val hostCandidates = listOf("192.168.10.5", "192.168.10.5")
     private val port = 5555
 
     private val _uiState = MutableStateFlow(ChatUiState())

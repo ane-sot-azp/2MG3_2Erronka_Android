@@ -34,6 +34,7 @@ import com.example.osislogin.R
 @Composable
 fun CategoriesScreen(
     tableId: Int,
+    initialErreserbaId: Int,
     viewModel: CategoriesViewModel,
     onLogout: () -> Unit,
     onChat: () -> Unit,
@@ -46,8 +47,8 @@ fun CategoriesScreen(
     var goBackAfterClose by remember { mutableStateOf(false) }
     var showClosePreviewDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(tableId) {
-        viewModel.load(tableId)
+    LaunchedEffect(tableId, initialErreserbaId) {
+        viewModel.load(tableId, initialErreserbaId)
     }
 
     AppChrome(
@@ -56,10 +57,10 @@ fun CategoriesScreen(
         navigationIcon = Icons.Filled.Apps,
         navigationIconContentDescription = "Mahaiak",
         showMiddleAction = true,
-        middleIconContentDescription = "Reservas",
+        middleIconContentDescription = "Erreserbak",
         onMiddleAction = onReservations,
         rightIconResId = R.drawable.chat,
-        rightIconContentDescription = "Chat",
+        rightIconContentDescription = "Txata",
         onRightAction = onChat,
         rightBadgeCount = chatUnreadCount
     ) { contentModifier ->

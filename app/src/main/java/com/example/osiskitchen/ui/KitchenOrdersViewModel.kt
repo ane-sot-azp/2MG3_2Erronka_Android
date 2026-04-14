@@ -45,7 +45,7 @@ data class KitchenKomanda(
 )
 
 class KitchenOrdersViewModel : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://192.168.10.55:5101/api"
+    private val apiBaseUrlLanPrimary = "http://192.168.10.5:5000/api"
     private val apiTraceTag = "OSIS_KITCHEN_API"
 
     private val _uiState = MutableStateFlow(KitchenOrdersUiState())
@@ -1406,7 +1406,7 @@ class KitchenOrdersViewModel : ViewModel() {
                 ?: throw IllegalStateException("Ezin izan da eskaria aurkitu (komandaId=$komandaId)")
 
         val eskaria = fetchEskariaById(eskariaId)
-        val newEgoera = if (egoera) "Egina" else "Sortuta"
+        val newEgoera = if (egoera) "Egina" else "Bidalita"
         val produktuakArray = JSONArray()
         for (p in eskaria.produktuak) {
             produktuakArray.put(
@@ -1559,8 +1559,8 @@ class KitchenOrdersViewModel : ViewModel() {
         return listOf(
             base,
             "$noApi/api",
-            "http://192.168.10.55:5101/api",
-            "http://192.168.10.55:5101/api"
+            "http://192.168.10.5:5000/api",
+            "http://192.168.10.5:5000/api"
         ).distinct()
     }
 

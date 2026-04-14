@@ -72,7 +72,7 @@ fun HomeScreen(
     onChat: () -> Unit,
     onReservations: () -> Unit,
     chatUnreadCount: Int,
-    onTableClick: (Int) -> Unit
+    onTableClick: (tableId: Int, erreserbaId: Int?) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -92,10 +92,10 @@ fun HomeScreen(
         },
         onLogoClick = { viewModel.refresh() },
         showMiddleAction = true,
-        middleIconContentDescription = "Reservas",
+        middleIconContentDescription = "Erreserbak",
         onMiddleAction = onReservations,
         rightIconResId = R.drawable.chat,
-        rightIconContentDescription = "Chat",
+        rightIconContentDescription = "Txata",
         onRightAction = onChat,
         rightBadgeCount = chatUnreadCount
     ) { contentModifier ->
@@ -141,9 +141,9 @@ fun HomeScreen(
                                     }
                                     TableAvailability.Reservada -> {
                                         viewModel.markReservedAsArrived(table.id)
-                                        onTableClick(table.id)
+                                        onTableClick(table.id, table.erreserbaId)
                                     }
-                                    TableAvailability.Ocupada -> onTableClick(table.id)
+                                    TableAvailability.Ocupada -> onTableClick(table.id, table.erreserbaId)
                                 }
                             }
                         )
@@ -156,14 +156,14 @@ fun HomeScreen(
     reserveDialogTable?.let { table ->
         AlertDialog(
             onDismissRequest = { reserveDialogTable = null },
-            title = { Text(text = "Crear reserva") },
+            title = { Text(text = "Erreserba sortu") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(text = "Mesa ${table.numberLabel}")
+                    Text(text = "${table.numberLabel}. Mahaia")
                     OutlinedTextField(
                         value = reserveDialogGuestCount,
                         onValueChange = { reserveDialogGuestCount = it.filter { ch -> ch.isDigit() }.take(3) },
-                        label = { Text(text = "Comensales") },
+                        label = { Text(text = "Pertsonak") },
                         singleLine = true
                     )
 
@@ -181,7 +181,7 @@ fun HomeScreen(
                     onClick = {
                         val guests = reserveDialogGuestCount.toIntOrNull() ?: 0
                         if (guests <= 0) {
-                            Toast.makeText(context, "Introduce un número de comensales válido", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Sartu pertsona kopuru egokia", Toast.LENGTH_SHORT).show()
                             return@TextButton
                         }
                         val tableId = table.id
@@ -190,15 +190,15 @@ fun HomeScreen(
                             tableId = tableId,
                             guestCount = guests,
                             slotStartMinutes = slot,
-                            onSuccess = {
+                            onSuccess = { reservationId ->
                                 reserveDialogTable = null
                                 reserveDialogGuestCount = ""
                                 reserveDialogSlotMinutes = null
-                                onTableClick(tableId)
+                                onTableClick(tableId, reservationId)
                             }
                         )
                     }
-                ) { Text(text = "Crear") }
+                ) { Text(text = "Sortu") }
             },
             dismissButton = {
                 TextButton(
@@ -207,7 +207,7 @@ fun HomeScreen(
                         reserveDialogGuestCount = ""
                         reserveDialogSlotMinutes = null
                     }
-                ) { Text(text = "Cancelar") }
+                ) { Text(text = "Utzi") }
             }
         )
     }
@@ -215,7 +215,7 @@ fun HomeScreen(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SectionFlowRow(
+fun SectionFlowRow(
     tables: List<TableUiModel>,
     onMesaClick: (TableUiModel) -> Unit
 ) {
@@ -260,10 +260,10 @@ private fun DateShiftHeader(
                         pickerState.selectedDateMillis?.let(onDateSelected)
                         showPicker = false
                     }
-                ) { Text(text = "OK") }
+                ) { Text(text = "Ados") }
             },
             dismissButton = {
-                TextButton(onClick = { showPicker = false }) { Text(text = "Cancelar") }
+                TextButton(onClick = { showPicker = false }) { Text(text = "Utzi") }
             }
         ) {
             DatePicker(state = pickerState, showModeToggle = false)
@@ -289,7 +289,7 @@ private fun DateShiftHeader(
             }
 
             IconButton(onClick = onRefresh) {
-                Icon(imageVector = Icons.Filled.Refresh, contentDescription = "Actualizar")
+                Icon(imageVector = Icons.Filled.Refresh, contentDescription = "Eguneratu")
             }
         }
 
@@ -323,7 +323,7 @@ private fun TimeSlotPicker(
     onSlotSelected: (Int) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = "Hora")
+        Text(text = "Ordua")
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -367,17 +367,19 @@ private fun formatSlotMinutes(minutesFromMidnight: Int): String {
 }
 
 @Composable
-private fun MesaCard(
+fun MesaCard(
     table: TableUiModel,
     onClick: () -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
+    val occupiedColor = remember { Color(0xFFF3863A) }
+    val reservedColor = remember { Color(0xFFFFD6BF) }
     val container =
         when {
             table.hasKitchenAlert -> scheme.errorContainer
             table.availability == TableAvailability.Libre -> scheme.secondaryContainer
-            table.availability == TableAvailability.Reservada -> scheme.tertiaryContainer
-            else -> scheme.primaryContainer
+            table.availability == TableAvailability.Reservada -> reservedColor
+            else -> occupiedColor
         }
     val content =
         when {
@@ -476,7 +478,7 @@ private fun MesaCard(
                 if (table.hasKitchenAlert) {
                     Icon(
                         imageVector = Icons.Filled.NotificationsActive,
-                        contentDescription = "Comanda lista",
+                        contentDescription = "Komanda prest",
                         tint = scheme.error.copy(alpha = alertAlpha.value),
                         modifier = Modifier.align(Alignment.TopEnd).size(22.dp)
                     )
@@ -487,7 +489,7 @@ private fun MesaCard(
                     verticalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Mesa ${table.numberLabel}",
+                        text = "${table.numberLabel}. Mahaia",
                         style = MaterialTheme.typography.titleMedium
                     )
                     Row(
@@ -509,25 +511,19 @@ private fun MesaCard(
 private data class MesaSize(val width: Dp, val height: Dp)
 
 private fun mesaSize(maxComensales: Int): MesaSize {
-    return when {
-        maxComensales <= 2 -> MesaSize(width = 92.dp, height = 72.dp)
-        maxComensales <= 4 -> MesaSize(width = 104.dp, height = 84.dp)
-        maxComensales <= 6 -> MesaSize(width = 148.dp, height = 84.dp)
-        maxComensales <= 8 -> MesaSize(width = 168.dp, height = 90.dp)
-        else -> MesaSize(width = 188.dp, height = 96.dp)
-    }
+    val effectiveMax = maxComensales.coerceAtLeast(4)
+    val steps = (effectiveMax - 4 + 1) / 2
+    val widthDp = 104 + (22 * steps)
+    return MesaSize(width = widthDp.dp, height = 84.dp)
 }
 
 private data class MesaSeats(val top: Int, val bottom: Int, val left: Int, val right: Int)
 
 private fun mesaSeats(maxComensales: Int): MesaSeats {
-    return when {
-        maxComensales <= 2 -> MesaSeats(top = 1, bottom = 1, left = 0, right = 0)
-        maxComensales <= 4 -> MesaSeats(top = 1, bottom = 1, left = 1, right = 1)
-        maxComensales <= 6 -> MesaSeats(top = 1, bottom = 1, left = 2, right = 2)
-        maxComensales <= 8 -> MesaSeats(top = 2, bottom = 2, left = 2, right = 2)
-        else -> MesaSeats(top = 2, bottom = 2, left = 3, right = 3)
-    }
+    val seats = maxComensales.coerceAtLeast(0)
+    val top = (seats + 1) / 2
+    val bottom = seats / 2
+    return MesaSeats(top = top, bottom = bottom, left = 0, right = 0)
 }
 
 @Composable

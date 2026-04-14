@@ -38,11 +38,12 @@ data class ReservationsUiState(
     val year: Int,
     val month: Int,
     val selectedDateMillis: Long,
-    val reservations: List<ReservationUiModel> = emptyList()
+    val reservations: List<ReservationUiModel> = emptyList(),
+    val tables: List<TableUiModel> = emptyList()
 )
 
 class ReservationsViewModel(private val sessionManager: SessionManager) : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://192.168.10.55:5101/api"
+    private val apiBaseUrlLanPrimary = "http://192.168.10.5:5000/api"
     private val apiDateTimeFormatter =
         SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply {
             timeZone = TimeZone.getDefault()
@@ -76,7 +77,8 @@ class ReservationsViewModel(private val sessionManager: SessionManager) : ViewMo
             _uiState.value = current.copy(isLoading = true, error = null)
             try {
                 val reservations = withContext(Dispatchers.IO) { fetchReservations() }
-                _uiState.value = _uiState.value.copy(isLoading = false, reservations = reservations)
+                val tables = withContext(Dispatchers.IO) { fetchTables() }
+                _uiState.value = _uiState.value.copy(isLoading = false, reservations = reservations, tables = tables)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: e.javaClass.simpleName)
             }
@@ -206,7 +208,71 @@ class ReservationsViewModel(private val sessionManager: SessionManager) : ViewMo
                 lastError = "url=$url error=${e.message ?: e.javaClass.simpleName}"
             }
         }
-        throw IllegalStateException("No se pudieron cargar las reservas ($lastError)")
+        throw IllegalStateException("Ezin izan dira erreserbak kargatu ($lastError)")
+    }
+
+    private data class ApiMahaia(
+        val id: Int,
+        val zenbakia: Int,
+        val pertsonaMax: Int,
+        val kokapena: String
+    )
+
+    private fun fetchTables(): List<TableUiModel> {
+        var lastError: String? = null
+        for (baseUrl in apiBaseUrlCandidates()) {
+            val url = "${baseUrl.trimEnd('/')}/Mahaiak"
+            try {
+                val (code, body) = httpGet(url)
+                if (code !in 200..299) {
+                    lastError = "url=$url code=$code body=${body.take(250)}"
+                    continue
+                }
+                return parseMahaiak(body)
+            } catch (e: Exception) {
+                lastError = "url=$url error=${e.message ?: e.javaClass.simpleName}"
+            }
+        }
+        throw IllegalStateException("Ezin izan dira mahaiak kargatu ($lastError)")
+    }
+
+    private fun parseMahaiak(body: String): List<TableUiModel> {
+        val root = JSONTokener(body).nextValue()
+        val array =
+            when (root) {
+                is JSONArray -> root
+                is JSONObject ->
+                    root.optJSONArray("data")
+                        ?: root.optJSONArray("Data")
+                        ?: root.optJSONArray("\$values")
+                        ?: JSONArray()
+                else -> JSONArray()
+            }
+
+        val out = ArrayList<TableUiModel>(array.length())
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            val id = obj.optInt("id", obj.optInt("Id", -1)).takeIf { it > 0 } ?: continue
+            val zenbakia = obj.optInt("zenbakia", obj.optInt("Zenbakia", id))
+            val pertsonaMax = obj.optInt("pertsonaKopurua", obj.optInt("PertsonaKopurua", 0))
+            val kokapena = obj.optString("kokapena", obj.optString("Kokapena", "")).trim()
+            val zone = kokapena.ifBlank { "Zonarik gabe" }
+
+            out.add(
+                TableUiModel(
+                    id = id,
+                    numberLabel = zenbakia.toString(),
+                    zone = zone,
+                    maxComensales = pertsonaMax,
+                    ocupadas = null,
+                    availability = TableAvailability.Libre,
+                    hasKitchenAlert = false,
+                    erreserbaId = null
+                )
+            )
+        }
+
+        return out.sortedWith(compareBy<TableUiModel> { it.zone.lowercase() }.thenBy { it.numberLabel.toIntOrNull() ?: Int.MAX_VALUE })
     }
 
     private fun parseReservations(body: String): List<ReservationUiModel> {
@@ -302,7 +368,7 @@ class ReservationsViewModel(private val sessionManager: SessionManager) : ViewMo
                 lastError = "url=$url error=${e.message ?: e.javaClass.simpleName}"
             }
         }
-        throw IllegalStateException("No se pudo editar la reserva ($lastError)")
+        throw IllegalStateException("Ezin izan da erreserba editatu ($lastError)")
     }
 
     private fun postReservation(
@@ -340,7 +406,7 @@ class ReservationsViewModel(private val sessionManager: SessionManager) : ViewMo
                 lastError = "url=$url error=${e.message ?: e.javaClass.simpleName}"
             }
         }
-        throw IllegalStateException("No se pudo crear la reserva ($lastError)")
+        throw IllegalStateException("Ezin izan da erreserba sortu ($lastError)")
     }
 
     private fun startOfDayMillis(millis: Long): Long {
@@ -420,8 +486,8 @@ class ReservationsViewModel(private val sessionManager: SessionManager) : ViewMo
         return listOf(
             base,
             "$noApi/api",
-            "http://192.168.10.55:5101/api",
-            "http://192.168.10.55:5101/api"
+            "http://192.168.10.5:5000/api",
+            "http://192.168.10.5:5000/api"
         ).distinct()
     }
 }

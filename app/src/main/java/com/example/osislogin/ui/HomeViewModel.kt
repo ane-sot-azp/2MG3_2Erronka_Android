@@ -60,7 +60,7 @@ data class HomeUiState(
 )
 
 class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://192.168.10.55:5101/api"
+    private val apiBaseUrlLanPrimary = "http://192.168.10.5:5000/api"
     private val dateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.US)
     private val apiDateTimeFormatter =
         SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply {
@@ -391,7 +391,7 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
         val kitchenAlertTableIds = HashSet<Int>()
         val out = ArrayList<TableUiModel>(tables.size)
         for (t in tables) {
-            val zone = t.kokapena.ifBlank { "Sin zona" }
+            val zone = t.kokapena.ifBlank { "Zonarik gabe" }
             val occ = byTableId[t.id]
             if (occ == null) {
                 out.add(
@@ -449,7 +449,7 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
     }
 
     private fun groupByZone(tables: List<TableUiModel>): List<TableSectionUiModel> {
-        val grouped = tables.groupBy { it.zone.ifBlank { "Sin zona" } }
+        val grouped = tables.groupBy { it.zone.ifBlank { "Zonarik gabe" } }
         return grouped.entries
             .sortedBy { it.key.lowercase() }
             .map { (zone, list) ->
@@ -533,7 +533,7 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
                 lastError = "url=$url error=${e.message ?: e.javaClass.simpleName}"
             }
         }
-        throw IllegalStateException("No se pudo crear la reserva ($lastError)")
+        throw IllegalStateException("Ezin izan da erreserba sortu ($lastError)")
     }
 
     private fun reservationDateTimeFromSlot(
@@ -674,8 +674,8 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
         return listOf(
             base,
             "$noApi/api",
-            "http://192.168.10.55:5101/api",
-            "http://192.168.10.55:5101/api"
+            "http://192.168.10.5:5000/api",
+            "http://192.168.10.5:5000/api"
         ).distinct()
     }
 }

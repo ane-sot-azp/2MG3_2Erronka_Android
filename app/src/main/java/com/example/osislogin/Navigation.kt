@@ -29,8 +29,8 @@ sealed class Route(val route: String) {
     object Login : Route("login")
     object Home : Route("home")
     object Reservations : Route("reservations")
-    object Categories : Route("categories/{tableId}") {
-        fun create(tableId: Int) = "categories/$tableId"
+    object Categories : Route("categories/{tableId}/{erreserbaId}") {
+        fun create(tableId: Int, erreserbaId: Int = 0) = "categories/$tableId/$erreserbaId"
     }
     object Platerak : Route("platerak/{tableId}/{erreserbaId}/{kategoriKey}") {
         fun create(tableId: Int, erreserbaId: Int, kategoriKey: String) =
@@ -88,8 +88,8 @@ fun AppNavigation(database: AppDatabase, sessionManager: SessionManager, startDe
                     onChat = { navController.navigate(Route.Chat.route) },
                     onReservations = goToReservations,
                     chatUnreadCount = chatUiState.unreadCount,
-                    onTableClick = { tableId ->
-                        navController.navigate(Route.Categories.create(tableId))
+                    onTableClick = { tableId, erreserbaId ->
+                        navController.navigate(Route.Categories.create(tableId, erreserbaId ?: 0))
                     }
             )
         }
@@ -108,12 +108,18 @@ fun AppNavigation(database: AppDatabase, sessionManager: SessionManager, startDe
 
         composable(
                 route = Route.Categories.route,
-                arguments = listOf(navArgument("tableId") { type = NavType.IntType })
+                arguments =
+                    listOf(
+                        navArgument("tableId") { type = NavType.IntType },
+                        navArgument("erreserbaId") { type = NavType.IntType }
+                    )
         ) { backStackEntry ->
             val tableId = backStackEntry.arguments?.getInt("tableId") ?: 0
+            val erreserbaId = backStackEntry.arguments?.getInt("erreserbaId") ?: 0
             val viewModel = remember { CategoriesViewModel(sessionManager) }
             CategoriesScreen(
                     tableId = tableId,
+                    initialErreserbaId = erreserbaId,
                     viewModel = viewModel,
                     onLogout = logoutAndGoToLogin,
                     onChat = { navController.navigate(Route.Chat.route) },
@@ -150,7 +156,7 @@ fun AppNavigation(database: AppDatabase, sessionManager: SessionManager, startDe
                     chatUnreadCount = chatUiState.unreadCount,
                     onBack = {
                         if (!navController.popBackStack()) {
-                            navController.navigate(Route.Categories.create(tableId)) {
+                            navController.navigate(Route.Categories.create(tableId, erreserbaId)) {
                                 launchSingleTop = true
                             }
                         }

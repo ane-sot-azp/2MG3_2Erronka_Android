@@ -1,5 +1,6 @@
 package com.example.osislogin.ui
 
+import android.content.res.Configuration
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -11,15 +12,22 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
@@ -55,10 +63,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.example.osislogin.R
 import java.text.DateFormatSymbols
 import java.text.SimpleDateFormat
@@ -78,8 +90,11 @@ fun ReservationsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     var editingReservation by remember { mutableStateOf<ReservationUiModel?>(null) }
     var creatingReservation by remember { mutableStateOf(false) }
+    var selectedShift by remember { mutableStateOf(Shift.Comida) }
 
     LaunchedEffect(Unit) { viewModel.refresh() }
     LaunchedEffect(uiState.error) {
@@ -90,10 +105,10 @@ fun ReservationsScreen(
         onLogout = onLogout,
         onLogoClick = onHome,
         showMiddleAction = true,
-        middleIconContentDescription = "Reservas",
+        middleIconContentDescription = "Erreserbak",
         onMiddleAction = onReservations,
         rightIconResId = R.drawable.chat,
-        rightIconContentDescription = "Chat",
+        rightIconContentDescription = "Txata",
         onRightAction = onChat,
         rightBadgeCount = chatUnreadCount
     ) { contentModifier ->
@@ -125,32 +140,88 @@ fun ReservationsScreen(
                 onRefresh = viewModel::refresh
             )
 
-            ReservationCalendar(
-                year = uiState.year,
-                month = uiState.month,
-                selectedDateMillis = uiState.selectedDateMillis,
-                reservations = uiState.reservations,
-                onDateSelected = viewModel::selectDate
-            )
+            SingleChoiceSegmentedButtonRow(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+            ) {
+                val options = listOf(Shift.Comida, Shift.Cena)
+                options.forEachIndexed { index, option ->
+                    SegmentedButton(
+                        selected = selectedShift == option,
+                        onClick = { selectedShift = option },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size)
+                    ) {
+                        Text(text = option.label)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
 
             val selected = uiState.selectedDateMillis
             val dayReservations =
-                remember(uiState.reservations, selected) {
+                remember(uiState.reservations, selected, selectedShift) {
                     val key = ymdKey(selected)
-                    uiState.reservations.filter { r -> ymdKey(r.egunaOrduaMillis) == key }.sortedBy { it.egunaOrduaMillis }
+                    uiState.reservations
+                        .filter { r -> ymdKey(r.egunaOrduaMillis) == key }
+                        .filter { r -> shiftFromMillis(r.egunaOrduaMillis) == selectedShift }
+                        .sortedBy { it.egunaOrduaMillis }
                 }
 
-            ReservationsList(
-                selectedDateMillis = selected,
-                reservations = dayReservations,
-                onEdit = { reservation -> editingReservation = reservation }
-            )
+            if (isLandscape) {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    Box(
+                        modifier = Modifier.fillMaxHeight().weight(0.9f),
+                        contentAlignment = Alignment.TopCenter
+                    ) {
+                        ReservationCalendar(
+                            modifier = Modifier.fillMaxWidth().widthIn(max = 360.dp).padding(start = 16.dp, end = 8.dp),
+                            year = uiState.year,
+                            month = uiState.month,
+                            selectedDateMillis = uiState.selectedDateMillis,
+                            selectedShift = selectedShift,
+                            reservations = uiState.reservations,
+                            onDateSelected = viewModel::selectDate
+                        )
+                    }
+
+                    ReservationsList(
+                        modifier = Modifier.fillMaxHeight().weight(1.1f),
+                        selectedDateMillis = selected,
+                        selectedShift = selectedShift,
+                        reservations = dayReservations,
+                        onEdit = { reservation -> editingReservation = reservation }
+                    )
+                }
+            } else {
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Box(modifier = Modifier.widthIn(max = 400.dp), contentAlignment = Alignment.Center) {
+                        ReservationCalendar(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp).scale(1f),
+                            year = uiState.year,
+                            month = uiState.month,
+                            selectedDateMillis = uiState.selectedDateMillis,
+                            selectedShift = selectedShift,
+                            reservations = uiState.reservations,
+                            onDateSelected = viewModel::selectDate
+                        )
+                    }
+                }
+
+                ReservationsList(
+                    modifier = Modifier.fillMaxSize(),
+                    selectedDateMillis = selected,
+                    selectedShift = selectedShift,
+                    reservations = dayReservations,
+                    onEdit = { reservation -> editingReservation = reservation }
+                )
+            }
         }
     }
 
     editingReservation?.let { reservation ->
         EditReservationDialog(
             reservation = reservation,
+            tables = uiState.tables,
+            allReservations = uiState.reservations,
             onDismiss = { editingReservation = null },
             onSave = { newTableId, newGuests, newDateMillis, newHour, newMinute ->
                 viewModel.updateReservation(
@@ -168,6 +239,8 @@ fun ReservationsScreen(
     if (creatingReservation) {
         CreateReservationDialog(
             initialDateMillis = uiState.selectedDateMillis,
+            tables = uiState.tables,
+            allReservations = uiState.reservations,
             onDismiss = { creatingReservation = false },
             onCreate = { name, phone, tableId, guests, dateMillis, hour, minute ->
                 viewModel.createReservation(
@@ -195,41 +268,70 @@ private fun CalendarHeader(
     onRefresh: () -> Unit
 ) {
     val label = remember(year, month) {
-        val locale = Locale.getDefault()
+        val locale = Locale("eu", "ES")
         "${monthName(month - 1, locale)} $year"
     }
+    val orange = remember { Color(0xFFF3863A) }
 
-    Row(
+    Box(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        contentAlignment = Alignment.Center
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onPrev) {
-                Icon(imageVector = Icons.Filled.ChevronLeft, contentDescription = "Mes anterior")
-            }
-            Text(text = label, style = MaterialTheme.typography.titleMedium)
-            IconButton(onClick = onNext) {
-                Icon(imageVector = Icons.Filled.ChevronRight, contentDescription = "Mes siguiente")
+        Row(
+            modifier = Modifier.align(Alignment.CenterStart),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = onPrev,
+                modifier = Modifier.size(40.dp).background(orange, CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ChevronLeft,
+                    contentDescription = "Aurreko hilabetea",
+                    tint = Color.White
+                )
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.align(Alignment.Center)
+        )
+
+        Row(
+            modifier = Modifier.align(Alignment.CenterEnd),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = onNext,
+                modifier = Modifier.size(40.dp).background(orange, CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ChevronRight,
+                    contentDescription = "Hurrengo hilabetea",
+                    tint = Color.White
+                )
+            }
+            Spacer(modifier = Modifier.width(6.dp))
             IconButton(onClick = onCreate) {
-                Icon(imageVector = Icons.Filled.Add, contentDescription = "Nueva reserva")
+                Icon(imageVector = Icons.Filled.Add, contentDescription = "Erreserba berria")
             }
             IconButton(onClick = onRefresh) {
-                Icon(imageVector = Icons.Filled.Refresh, contentDescription = "Actualizar")
+                Icon(imageVector = Icons.Filled.Refresh, contentDescription = "Eguneratu")
             }
         }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ReservationCalendar(
+    modifier: Modifier = Modifier,
     year: Int,
     month: Int,
     selectedDateMillis: Long,
+    selectedShift: Shift,
     reservations: List<ReservationUiModel>,
     onDateSelected: (Long) -> Unit
 ) {
@@ -249,7 +351,8 @@ private fun ReservationCalendar(
     val daysInMonth = remember(cal) { cal.getActualMaximum(Calendar.DAY_OF_MONTH) }
 
     val counts = remember(reservations, year, month) {
-        val map = HashMap<String, Int>()
+        val comida = HashMap<String, Int>()
+        val cena = HashMap<String, Int>()
         reservations.forEach { r ->
             val c = Calendar.getInstance()
             c.timeInMillis = r.egunaOrduaMillis
@@ -257,57 +360,73 @@ private fun ReservationCalendar(
             val m = c.get(Calendar.MONTH) + 1
             if (y == year && m == month) {
                 val key = ymdKey(r.egunaOrduaMillis)
-                map[key] = (map[key] ?: 0) + 1
+                when (shiftFromMillis(r.egunaOrduaMillis)) {
+                    Shift.Comida -> comida[key] = (comida[key] ?: 0) + 1
+                    Shift.Cena -> cena[key] = (cena[key] ?: 0) + 1
+                }
             }
         }
-        map
+        comida to cena
     }
 
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            listOf("L", "M", "X", "J", "V", "S", "D").forEach { day ->
+    Column(modifier = modifier) {
+        val scheme = MaterialTheme.colorScheme
+        val weekendColor = remember { Color(0xFFF3863A) }
+        Row(modifier = Modifier.fillMaxWidth()) {
+            listOf("Al", "As", "Az", "Og", "Or", "Lr", "Ig").forEachIndexed { index, day ->
+                val isWeekend = index >= 5
                 Text(
                     text = day,
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (isWeekend) weekendColor else scheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Clip
                 )
             }
         }
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         val totalCells = 42
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            maxItemsInEachRow = 7,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            for (cell in 0 until totalCells) {
-                val dayNumber = cell - offset + 1
-                val dateMillis =
-                    if (dayNumber in 1..daysInMonth) {
-                        val c = Calendar.getInstance()
-                        c.set(Calendar.YEAR, year)
-                        c.set(Calendar.MONTH, month - 1)
-                        c.set(Calendar.DAY_OF_MONTH, dayNumber)
-                        c.set(Calendar.HOUR_OF_DAY, 0)
-                        c.set(Calendar.MINUTE, 0)
-                        c.set(Calendar.SECOND, 0)
-                        c.set(Calendar.MILLISECOND, 0)
-                        c.timeInMillis
-                    } else {
-                        null
+        val spacing = 4.dp
+        Column(verticalArrangement = Arrangement.spacedBy(spacing)) {
+            for (week in 0 until 6) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(spacing)
+                ) {
+                    for (dow in 0 until 7) {
+                        val cell = week * 7 + dow
+                        val dayNumber = cell - offset + 1
+                        val dateMillis =
+                            if (dayNumber in 1..daysInMonth) {
+                                val c = Calendar.getInstance()
+                                c.set(Calendar.YEAR, year)
+                                c.set(Calendar.MONTH, month - 1)
+                                c.set(Calendar.DAY_OF_MONTH, dayNumber)
+                                c.set(Calendar.HOUR_OF_DAY, 0)
+                                c.set(Calendar.MINUTE, 0)
+                                c.set(Calendar.SECOND, 0)
+                                c.set(Calendar.MILLISECOND, 0)
+                                c.timeInMillis
+                            } else {
+                                null
+                            }
+                        val isWeekendColumn = dow >= 5
+                        CalendarDayCell(
+                            modifier = Modifier.weight(1f).aspectRatio(1f),
+                            dateMillis = dateMillis,
+                            dayLabel = dateMillis?.let { dayNumber.toString() }.orEmpty(),
+                            isSelected = dateMillis != null && ymdKey(dateMillis) == ymdKey(selectedDateMillis),
+                            isWeekend = dateMillis != null && isWeekendColumn,
+                            comidaCount = dateMillis?.let { counts.first[ymdKey(it)] } ?: 0,
+                            cenaCount = dateMillis?.let { counts.second[ymdKey(it)] } ?: 0,
+                            selectedShift = selectedShift,
+                            onClick = { dateMillis?.let(onDateSelected) }
+                        )
                     }
-                CalendarDayCell(
-                    dateMillis = dateMillis,
-                    dayLabel = dateMillis?.let { dayNumber.toString() }.orEmpty(),
-                    isSelected = dateMillis != null && ymdKey(dateMillis) == ymdKey(selectedDateMillis),
-                    count = dateMillis?.let { counts[ymdKey(it)] } ?: 0,
-                    onClick = { dateMillis?.let(onDateSelected) }
-                )
+                }
             }
         }
     }
@@ -315,46 +434,83 @@ private fun ReservationCalendar(
 
 @Composable
 private fun CalendarDayCell(
+    modifier: Modifier = Modifier,
     dateMillis: Long?,
     dayLabel: String,
     isSelected: Boolean,
-    count: Int,
+    isWeekend: Boolean,
+    comidaCount: Int,
+    cenaCount: Int,
+    selectedShift: Shift,
     onClick: () -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
+    val weekendColor = remember { Color(0xFFF3863A) }
     val bg =
         when {
             dateMillis == null -> Color.Transparent
             isSelected -> scheme.primaryContainer
+            isWeekend -> weekendColor.copy(alpha = 0.28f)
             else -> scheme.surfaceVariant
         }
     val fg =
         when {
             dateMillis == null -> scheme.onSurfaceVariant.copy(alpha = 0.4f)
             isSelected -> scheme.onPrimaryContainer
+            isWeekend -> scheme.onSurface
             else -> scheme.onSurfaceVariant
         }
 
     Surface(
         color = bg,
         shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.size(44.dp).clickable(enabled = dateMillis != null, onClick = onClick)
+        modifier = modifier.clickable(enabled = dateMillis != null, onClick = onClick)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             Text(
                 text = dayLabel,
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelMedium,
                 color = fg,
                 modifier = Modifier.align(Alignment.Center)
             )
-            if (dateMillis != null && count > 0) {
-                Box(
-                    modifier =
-                        Modifier.align(Alignment.BottomEnd)
-                            .padding(6.dp)
-                            .size(10.dp)
-                            .background(MaterialTheme.colorScheme.tertiary, RoundedCornerShape(99.dp))
-                )
+            if (dateMillis != null) {
+                val comidaColor = MaterialTheme.colorScheme.primary
+                val cenaColor = MaterialTheme.colorScheme.secondary
+                val comidaSize = if (selectedShift == Shift.Comida) 8.dp else 6.dp
+                val cenaSize = if (selectedShift == Shift.Cena) 8.dp else 6.dp
+
+                if (comidaCount > 0 && cenaCount > 0) {
+                    Box(
+                        modifier =
+                            Modifier.align(Alignment.BottomStart)
+                                .padding(4.dp)
+                                .size(comidaSize)
+                                .background(comidaColor, RoundedCornerShape(99.dp))
+                    )
+                    Box(
+                        modifier =
+                            Modifier.align(Alignment.BottomEnd)
+                                .padding(4.dp)
+                                .size(cenaSize)
+                                .background(cenaColor, RoundedCornerShape(99.dp))
+                    )
+                } else if (comidaCount > 0) {
+                    Box(
+                        modifier =
+                            Modifier.align(Alignment.BottomEnd)
+                                .padding(4.dp)
+                                .size(comidaSize)
+                                .background(comidaColor, RoundedCornerShape(99.dp))
+                    )
+                } else if (cenaCount > 0) {
+                    Box(
+                        modifier =
+                            Modifier.align(Alignment.BottomEnd)
+                                .padding(4.dp)
+                                .size(cenaSize)
+                                .background(cenaColor, RoundedCornerShape(99.dp))
+                    )
+                }
             }
         }
     }
@@ -362,25 +518,28 @@ private fun CalendarDayCell(
 
 @Composable
 private fun ReservationsList(
+    modifier: Modifier = Modifier,
     selectedDateMillis: Long,
+    selectedShift: Shift,
     reservations: List<ReservationUiModel>,
     onEdit: (ReservationUiModel) -> Unit
 ) {
     val locale = Locale.getDefault()
+    val monthLocale = Locale("eu", "ES")
     val dateLabel = remember(selectedDateMillis) {
         val cal = Calendar.getInstance()
         cal.timeInMillis = selectedDateMillis
         val day = cal.get(Calendar.DAY_OF_MONTH)
-        val monthName = monthName(cal.get(Calendar.MONTH), locale)
+        val monthName = monthName(cal.get(Calendar.MONTH), monthLocale)
         "$day $monthName"
     }
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text(text = "Reservas · $dateLabel", style = MaterialTheme.typography.titleMedium)
+    Column(modifier = modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text(text = "Erreserbak · $dateLabel · ${selectedShift.label}", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(10.dp))
 
         if (reservations.isEmpty()) {
             Text(
-                text = "No hay reservas para este día",
+                text = "Egun honetarako ez dago erreserbarik",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -409,13 +568,13 @@ private fun ReservationsList(
                     ) {
                         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(
-                                text = "$timeLabel · Mesa ${r.mahaiakId}",
+                                text = "$timeLabel · ${r.mahaiakId}. Mahaia",
                                 style = MaterialTheme.typography.titleSmall,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "${r.pertsonaKopurua} comensales · ${r.bezeroIzena.ifBlank { "—" }}",
+                                text = "${r.pertsonaKopurua} pertsona · ${r.bezeroIzena.ifBlank { "—" }}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -423,7 +582,7 @@ private fun ReservationsList(
                             )
                         }
                         IconButton(onClick = { onEdit(r) }) {
-                            Icon(imageVector = Icons.Filled.Edit, contentDescription = "Editar")
+                            Icon(imageVector = Icons.Filled.Edit, contentDescription = "Editatu")
                         }
                     }
                 }
@@ -436,10 +595,15 @@ private fun ReservationsList(
 @Composable
 private fun EditReservationDialog(
     reservation: ReservationUiModel,
+    tables: List<TableUiModel>,
+    allReservations: List<ReservationUiModel>,
     onDismiss: () -> Unit,
     onSave: (newTableId: Int, newGuests: Int, newDateMillis: Long, newHour: Int, newMinute: Int) -> Unit
 ) {
     val context = LocalContext.current
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val dialogMinWidth = if (isLandscape) 760.dp else 340.dp
+    val dialogMaxWidth = if (isLandscape) 980.dp else 560.dp
     val initialDateMillis = remember(reservation.egunaOrduaMillis) { startOfDayMillis(reservation.egunaOrduaMillis) }
     val cal = remember(reservation.egunaOrduaMillis) { Calendar.getInstance().apply { timeInMillis = reservation.egunaOrduaMillis } }
 
@@ -448,7 +612,6 @@ private fun EditReservationDialog(
 
     var dateMillis by remember { mutableStateOf(initialDateMillis) }
     var guestsText by remember { mutableStateOf(reservation.pertsonaKopurua.toString()) }
-    var tableText by remember { mutableStateOf(reservation.mahaiakId.toString()) }
     val initialMinutes = remember { cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE) }
     val initialShift =
         remember {
@@ -466,6 +629,23 @@ private fun EditReservationDialog(
             slots.minByOrNull { kotlin.math.abs(it - rounded) } ?: slots.first()
         }
     var selectedSlotStartMinutes by remember { mutableStateOf(initialSlot) }
+    var selectedTableId by remember { mutableStateOf(reservation.mahaiakId) }
+
+    val computedTables =
+        remember(tables, allReservations, dateMillis, selectedSlotStartMinutes) {
+            tablesWithAvailability(
+                baseTables = tables,
+                reservations = allReservations,
+                selectedDateMillis = dateMillis,
+                slotStartMinutes = selectedSlotStartMinutes,
+                excludeReservationId = reservation.id
+            )
+        }
+    val sections = remember(computedTables) { groupByZone(computedTables) }
+    val selectedTable =
+        remember(computedTables, selectedTableId) {
+            computedTables.firstOrNull { it.id == selectedTableId }
+        }
 
     if (showDatePicker) {
         DatePickerDialog(
@@ -479,10 +659,10 @@ private fun EditReservationDialog(
                         }
                         showDatePicker = false
                     }
-                ) { Text(text = "OK") }
+                ) { Text(text = "Ados") }
             },
             dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text(text = "Cancelar") }
+                TextButton(onClick = { showDatePicker = false }) { Text(text = "Utzi") }
             }
         ) {
             DatePicker(state = pickerState, showModeToggle = false)
@@ -491,70 +671,181 @@ private fun EditReservationDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(text = "Editar reserva") },
+        modifier = Modifier.widthIn(min = dialogMinWidth, max = dialogMaxWidth),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        title = { Text(text = "Erreserba editatu") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(text = "Reserva #${reservation.id}", style = MaterialTheme.typography.bodyMedium)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = tableText,
-                        onValueChange = { tableText = it.filter { ch -> ch.isDigit() }.take(5) },
-                        label = { Text(text = "Mesa") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
+            val slots = remember(selectedShift) { generateSlotMinutes(selectedShift) }
+            val tablesContent: @Composable (Modifier) -> Unit = { modifier ->
+                LazyColumn(
+                    modifier = modifier,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(sections, key = { it.name }) { section ->
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(text = section.name, style = MaterialTheme.typography.titleSmall)
+                            SectionFlowRow(
+                                tables = section.tables,
+                                onMesaClick = { table ->
+                                    if (table.availability != TableAvailability.Libre && table.id != selectedTableId) {
+                                        Toast.makeText(context, "Mahaia ez dago erabilgarri", Toast.LENGTH_SHORT).show()
+                                        return@SectionFlowRow
+                                    }
+                                    selectedTableId = table.id
+                                    val max = table.maxComensales
+                                    val value = guestsText.toIntOrNull()
+                                    if (value != null && value > max) {
+                                        guestsText = max.toString()
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (isLandscape) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(text = "Erreserba #${reservation.id}", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            text = selectedTable?.numberLabel?.let { "$it. Mahaia" } ?: "—",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        OutlinedTextField(
+                            value = guestsText,
+                            onValueChange = { input ->
+                                val digits = input.filter { ch -> ch.isDigit() }.take(3)
+                                val max = selectedTable?.maxComensales
+                                val clamped =
+                                    if (max != null) {
+                                        val value = digits.toIntOrNull()
+                                        if (value != null && value > max) max.toString() else digits
+                                    } else {
+                                        digits
+                                    }
+                                guestsText = clamped
+                            },
+                            label = { Text(text = "Pertsonak (gehienez ${selectedTable?.maxComensales ?: "—"})") },
+                            singleLine = true
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.fillMaxWidth().clickable { showDatePicker = true }
+                        ) {
+                            Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 14.dp)) {
+                                Text(text = ymdKey(dateMillis), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            val options = listOf(Shift.Comida, Shift.Cena)
+                            options.forEachIndexed { index, option ->
+                                SegmentedButton(
+                                    selected = selectedShift == option,
+                                    onClick = {
+                                        selectedShift = option
+                                        val newSlots = generateSlotMinutes(option)
+                                        selectedSlotStartMinutes = newSlots.first()
+                                    },
+                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size)
+                                ) {
+                                    Text(text = option.label)
+                                }
+                            }
+                        }
+
+                        ReservationTimeSlotPicker(
+                            slots = slots,
+                            selectedSlotStartMinutes = selectedSlotStartMinutes,
+                            onSlotSelected = { selectedSlotStartMinutes = it }
+                        )
+                    }
+
+                    tablesContent(Modifier.weight(1f).fillMaxHeight())
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(text = "Erreserba #${reservation.id}", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = selectedTable?.numberLabel?.let { "$it. Mahaia" } ?: "—",
+                        style = MaterialTheme.typography.bodyMedium
                     )
                     OutlinedTextField(
                         value = guestsText,
-                        onValueChange = { guestsText = it.filter { ch -> ch.isDigit() }.take(3) },
-                        label = { Text(text = "Comensales") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
+                        onValueChange = { input ->
+                            val digits = input.filter { ch -> ch.isDigit() }.take(3)
+                            val max = selectedTable?.maxComensales
+                            val clamped =
+                                if (max != null) {
+                                    val value = digits.toIntOrNull()
+                                    if (value != null && value > max) max.toString() else digits
+                                } else {
+                                    digits
+                                }
+                            guestsText = clamped
+                        },
+                        label = { Text(text = "Pertsonak (gehienez ${selectedTable?.maxComensales ?: "—"})") },
+                        singleLine = true
                     )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.weight(1f).clickable { showDatePicker = true }
-                    ) {
-                        Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 14.dp)) {
-                            Text(text = ymdKey(dateMillis), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    val options = listOf(Shift.Comida, Shift.Cena)
-                    options.forEachIndexed { index, option ->
-                        SegmentedButton(
-                            selected = selectedShift == option,
-                            onClick = {
-                                selectedShift = option
-                                val slots = generateSlotMinutes(option)
-                                selectedSlotStartMinutes = slots.first()
-                            },
-                            shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.weight(1f).clickable { showDatePicker = true }
                         ) {
-                            Text(text = option.label)
+                            Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 14.dp)) {
+                                Text(text = ymdKey(dateMillis), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
-                }
 
-                val slots = remember(selectedShift) { generateSlotMinutes(selectedShift) }
-                ReservationTimeSlotPicker(
-                    slots = slots,
-                    selectedSlotStartMinutes = selectedSlotStartMinutes,
-                    onSlotSelected = { selectedSlotStartMinutes = it }
-                )
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        val options = listOf(Shift.Comida, Shift.Cena)
+                        options.forEachIndexed { index, option ->
+                            SegmentedButton(
+                                selected = selectedShift == option,
+                                onClick = {
+                                    selectedShift = option
+                                    val newSlots = generateSlotMinutes(option)
+                                    selectedSlotStartMinutes = newSlots.first()
+                                },
+                                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size)
+                            ) {
+                                Text(text = option.label)
+                            }
+                        }
+                    }
+
+                    ReservationTimeSlotPicker(
+                        slots = slots,
+                        selectedSlotStartMinutes = selectedSlotStartMinutes,
+                        onSlotSelected = { selectedSlotStartMinutes = it }
+                    )
+
+                    tablesContent(Modifier.fillMaxWidth().height(260.dp))
+                }
             }
         },
         confirmButton = {
             TextButton(
                 onClick = {
-                    val tableId = tableText.toIntOrNull() ?: 0
                     val guests = guestsText.toIntOrNull() ?: 0
+                    val tableId = selectedTableId
                     if (tableId <= 0 || guests <= 0) {
-                        Toast.makeText(context, "Datos inválidos", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Datu baliogabeak", Toast.LENGTH_SHORT).show()
+                        return@TextButton
+                    }
+                    val max = selectedTable?.maxComensales ?: 0
+                    if (max > 0 && guests > max) {
+                        Toast.makeText(context, "Mahaia honetarako gehienez $max pertsona", Toast.LENGTH_SHORT).show()
                         return@TextButton
                     }
                     onSave(
@@ -566,10 +857,10 @@ private fun EditReservationDialog(
                     )
                     onDismiss()
                 }
-            ) { Text(text = "Guardar") }
+            ) { Text(text = "Gorde") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(text = "Cancelar") }
+            TextButton(onClick = onDismiss) { Text(text = "Utzi") }
         }
     )
 }
@@ -582,7 +873,7 @@ private fun ReservationTimeSlotPicker(
     onSlotSelected: (Int) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = "Hora")
+        Text(text = "Ordua")
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -623,6 +914,98 @@ private fun formatSlotMinutes(minutesFromMidnight: Int): String {
     val h = minutesFromMidnight / 60
     val m = minutesFromMidnight % 60
     return "%02d:%02d".format(h, m)
+}
+
+private fun groupByZone(tables: List<TableUiModel>): List<TableSectionUiModel> {
+    val grouped = tables.groupBy { it.zone.ifBlank { "Zonarik gabe" } }
+    return grouped.entries
+        .sortedBy { it.key.lowercase() }
+        .map { (zone, list) ->
+            TableSectionUiModel(
+                name = zone,
+                tables = list.sortedBy { it.numberLabel.toIntOrNull() ?: Int.MAX_VALUE }
+            )
+        }
+}
+
+private fun tablesWithAvailability(
+    baseTables: List<TableUiModel>,
+    reservations: List<ReservationUiModel>,
+    selectedDateMillis: Long,
+    slotStartMinutes: Int,
+    excludeReservationId: Int?
+): List<TableUiModel> {
+    val selectedKey = ymdKey(selectedDateMillis)
+    val todayKey = ymdKey(System.currentTimeMillis())
+    val nowMillis = System.currentTimeMillis()
+    val relevant =
+        reservations.asSequence()
+            .filter { it.ordainduta == 0 }
+            .filter { excludeReservationId == null || it.id != excludeReservationId }
+            .filter { ymdKey(it.egunaOrduaMillis) == selectedKey }
+            .filter { slotStartMinutesFromMillisOrNull(it.egunaOrduaMillis) == slotStartMinutes }
+            .toList()
+
+    val byTableId = HashMap<Int, ReservationUiModel>(relevant.size)
+    for (r in relevant) {
+        val existing = byTableId[r.mahaiakId]
+        if (existing == null || r.egunaOrduaMillis > existing.egunaOrduaMillis) {
+            byTableId[r.mahaiakId] = r
+        }
+    }
+
+    val out = ArrayList<TableUiModel>(baseTables.size)
+    for (t in baseTables) {
+        val r = byTableId[t.id]
+        if (r == null) {
+            out.add(
+                t.copy(
+                    availability = TableAvailability.Libre,
+                    ocupadas = null,
+                    erreserbaId = null,
+                    hasKitchenAlert = false
+                )
+            )
+        } else {
+            val isFutureSelected = selectedKey > todayKey
+            val isToday = selectedKey == todayKey
+            val reserved = isFutureSelected || (isToday && r.egunaOrduaMillis > nowMillis) || (!isFutureSelected && !isToday)
+            val availability = if (reserved) TableAvailability.Reservada else TableAvailability.Ocupada
+            out.add(
+                t.copy(
+                    availability = availability,
+                    ocupadas = r.pertsonaKopurua,
+                    erreserbaId = r.id,
+                    hasKitchenAlert = false
+                )
+            )
+        }
+    }
+
+    return out.sortedWith(compareBy<TableUiModel> { it.zone.lowercase() }.thenBy { it.numberLabel.toIntOrNull() ?: Int.MAX_VALUE })
+}
+
+private fun slotStartMinutesFromMillisOrNull(millis: Long): Int? {
+    val cal = Calendar.getInstance()
+    cal.timeInMillis = millis
+    val minutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+    val slot = (minutes / 30) * 30
+    return when (slot) {
+        in (13 * 60) until (16 * 60) -> slot
+        in (19 * 60) until (23 * 60) -> slot
+        else -> null
+    }
+}
+
+private fun shiftFromMillis(millis: Long): Shift {
+    val cal = Calendar.getInstance()
+    cal.timeInMillis = millis
+    val minutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+    return when (minutes) {
+        in (13 * 60) until (16 * 60) -> Shift.Comida
+        in (19 * 60) until (23 * 60) -> Shift.Cena
+        else -> if (minutes < 19 * 60) Shift.Comida else Shift.Cena
+    }
 }
 
 private fun startOfDayMillis(millis: Long): Long {
@@ -671,14 +1054,18 @@ private fun monthName(month0: Int, locale: Locale): String {
 @Composable
 private fun CreateReservationDialog(
     initialDateMillis: Long,
+    tables: List<TableUiModel>,
+    allReservations: List<ReservationUiModel>,
     onDismiss: () -> Unit,
     onCreate: (name: String, phone: String, tableId: Int, guests: Int, dateMillis: Long, hour: Int, minute: Int) -> Unit
 ) {
     val context = LocalContext.current
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val dialogMinWidth = if (isLandscape) 760.dp else 340.dp
+    val dialogMaxWidth = if (isLandscape) 980.dp else 560.dp
     var nameText by remember { mutableStateOf("") }
     var phoneText by remember { mutableStateOf("") }
     var guestsText by remember { mutableStateOf("") }
-    var tableText by remember { mutableStateOf("") }
     var showDatePicker by remember { mutableStateOf(false) }
 
     val initialLocalDateMillis = remember(initialDateMillis) { startOfDayMillis(initialDateMillis) }
@@ -688,6 +1075,23 @@ private fun CreateReservationDialog(
     var selectedShift by remember { mutableStateOf(Shift.Comida) }
     val initialSlot = remember { generateSlotMinutes(Shift.Comida).first() }
     var selectedSlotStartMinutes by remember { mutableStateOf(initialSlot) }
+    var selectedTableId by remember { mutableStateOf<Int?>(null) }
+
+    val computedTables =
+        remember(tables, allReservations, dateMillis, selectedSlotStartMinutes) {
+            tablesWithAvailability(
+                baseTables = tables,
+                reservations = allReservations,
+                selectedDateMillis = dateMillis,
+                slotStartMinutes = selectedSlotStartMinutes,
+                excludeReservationId = null
+            )
+        }
+    val sections = remember(computedTables) { groupByZone(computedTables) }
+    val selectedTable =
+        remember(computedTables, selectedTableId) {
+            selectedTableId?.let { id -> computedTables.firstOrNull { it.id == id } }
+        }
 
     if (showDatePicker) {
         DatePickerDialog(
@@ -701,10 +1105,10 @@ private fun CreateReservationDialog(
                         }
                         showDatePicker = false
                     }
-                ) { Text(text = "OK") }
+                ) { Text(text = "Ados") }
             },
             dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text(text = "Cancelar") }
+                TextButton(onClick = { showDatePicker = false }) { Text(text = "Utzi") }
             }
         ) {
             DatePicker(state = pickerState, showModeToggle = false)
@@ -713,79 +1117,203 @@ private fun CreateReservationDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(text = "Nueva reserva") },
+        modifier = Modifier.widthIn(min = dialogMinWidth, max = dialogMaxWidth),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        title = { Text(text = "Erreserba berria") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = nameText,
-                    onValueChange = { nameText = it.take(60) },
-                    label = { Text(text = "Nombre") },
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = phoneText,
-                    onValueChange = { phoneText = it.take(30) },
-                    label = { Text(text = "Teléfono") },
-                    singleLine = true
-                )
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = tableText,
-                        onValueChange = { tableText = it.filter { ch -> ch.isDigit() }.take(5) },
-                        label = { Text(text = "Mesa") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = guestsText,
-                        onValueChange = { guestsText = it.filter { ch -> ch.isDigit() }.take(3) },
-                        label = { Text(text = "Comensales") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.fillMaxWidth().clickable { showDatePicker = true }
+            val slots = remember(selectedShift) { generateSlotMinutes(selectedShift) }
+            val tablesContent: @Composable (Modifier) -> Unit = { modifier ->
+                LazyColumn(
+                    modifier = modifier,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 14.dp)) {
-                        Text(text = ymdKey(dateMillis), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    val options = listOf(Shift.Comida, Shift.Cena)
-                    options.forEachIndexed { index, option ->
-                        SegmentedButton(
-                            selected = selectedShift == option,
-                            onClick = {
-                                selectedShift = option
-                                selectedSlotStartMinutes = generateSlotMinutes(option).first()
-                            },
-                            shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size)
-                        ) {
-                            Text(text = option.label)
+                    items(sections, key = { it.name }) { section ->
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(text = section.name, style = MaterialTheme.typography.titleSmall)
+                            SectionFlowRow(
+                                tables = section.tables,
+                                onMesaClick = { table ->
+                                    if (table.availability != TableAvailability.Libre) {
+                                        Toast.makeText(context, "Mahaia ez dago erabilgarri", Toast.LENGTH_SHORT).show()
+                                        return@SectionFlowRow
+                                    }
+                                    selectedTableId = table.id
+                                    val max = table.maxComensales
+                                    val value = guestsText.toIntOrNull()
+                                    if (value != null && value > max) {
+                                        guestsText = max.toString()
+                                    }
+                                }
+                            )
                         }
                     }
                 }
+            }
 
-                val slots = remember(selectedShift) { generateSlotMinutes(selectedShift) }
-                ReservationTimeSlotPicker(
-                    slots = slots,
-                    selectedSlotStartMinutes = selectedSlotStartMinutes,
-                    onSlotSelected = { selectedSlotStartMinutes = it }
-                )
+            if (isLandscape) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = nameText,
+                            onValueChange = { nameText = it.take(60) },
+                            label = { Text(text = "Izena") },
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = phoneText,
+                            onValueChange = { phoneText = it.take(30) },
+                            label = { Text(text = "Telefonoa") },
+                            singleLine = true
+                        )
+                        Text(
+                            text = selectedTable?.numberLabel?.let { "$it. Mahaia" } ?: "—",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        OutlinedTextField(
+                            value = guestsText,
+                            onValueChange = { input ->
+                                val digits = input.filter { ch -> ch.isDigit() }.take(3)
+                                val max = selectedTable?.maxComensales
+                                val clamped =
+                                    if (max != null) {
+                                        val value = digits.toIntOrNull()
+                                        if (value != null && value > max) max.toString() else digits
+                                    } else {
+                                        digits
+                                    }
+                                guestsText = clamped
+                            },
+                            label = { Text(text = "Pertsonak (gehienez ${selectedTable?.maxComensales ?: "—"})") },
+                            singleLine = true
+                        )
+
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.fillMaxWidth().clickable { showDatePicker = true }
+                        ) {
+                            Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 14.dp)) {
+                                Text(text = ymdKey(dateMillis), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            val options = listOf(Shift.Comida, Shift.Cena)
+                            options.forEachIndexed { index, option ->
+                                SegmentedButton(
+                                    selected = selectedShift == option,
+                                    onClick = {
+                                        selectedShift = option
+                                        selectedSlotStartMinutes = generateSlotMinutes(option).first()
+                                        selectedTableId = null
+                                    },
+                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size)
+                                ) {
+                                    Text(text = option.label)
+                                }
+                            }
+                        }
+
+                        ReservationTimeSlotPicker(
+                            slots = slots,
+                            selectedSlotStartMinutes = selectedSlotStartMinutes,
+                            onSlotSelected = { selectedSlotStartMinutes = it }
+                        )
+                    }
+
+                    tablesContent(Modifier.weight(1f).fillMaxHeight())
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = nameText,
+                        onValueChange = { nameText = it.take(60) },
+                        label = { Text(text = "Izena") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = phoneText,
+                        onValueChange = { phoneText = it.take(30) },
+                        label = { Text(text = "Telefonoa") },
+                        singleLine = true
+                    )
+                    Text(
+                        text = selectedTable?.numberLabel?.let { "$it. Mahaia" } ?: "—",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    OutlinedTextField(
+                        value = guestsText,
+                        onValueChange = { input ->
+                            val digits = input.filter { ch -> ch.isDigit() }.take(3)
+                            val max = selectedTable?.maxComensales
+                            val clamped =
+                                if (max != null) {
+                                    val value = digits.toIntOrNull()
+                                    if (value != null && value > max) max.toString() else digits
+                                } else {
+                                    digits
+                                }
+                            guestsText = clamped
+                        },
+                        label = { Text(text = "Pertsonak (gehienez ${selectedTable?.maxComensales ?: "—"})") },
+                        singleLine = true
+                    )
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth().clickable { showDatePicker = true }
+                    ) {
+                        Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 14.dp)) {
+                            Text(text = ymdKey(dateMillis), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        val options = listOf(Shift.Comida, Shift.Cena)
+                        options.forEachIndexed { index, option ->
+                            SegmentedButton(
+                                selected = selectedShift == option,
+                                onClick = {
+                                    selectedShift = option
+                                    selectedSlotStartMinutes = generateSlotMinutes(option).first()
+                                    selectedTableId = null
+                                },
+                                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size)
+                            ) {
+                                Text(text = option.label)
+                            }
+                        }
+                    }
+
+                    ReservationTimeSlotPicker(
+                        slots = slots,
+                        selectedSlotStartMinutes = selectedSlotStartMinutes,
+                        onSlotSelected = { selectedSlotStartMinutes = it }
+                    )
+
+                    tablesContent(Modifier.fillMaxWidth().height(260.dp))
+                }
             }
         },
         confirmButton = {
             TextButton(
                 onClick = {
-                    val tableId = tableText.toIntOrNull() ?: 0
                     val guests = guestsText.toIntOrNull() ?: 0
+                    val tableId = selectedTableId ?: 0
                     if (tableId <= 0 || guests <= 0) {
-                        Toast.makeText(context, "Datos inválidos", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Datu baliogabeak", Toast.LENGTH_SHORT).show()
+                        return@TextButton
+                    }
+                    val max = selectedTable?.maxComensales ?: 0
+                    if (max > 0 && guests > max) {
+                        Toast.makeText(context, "Mahaia honetarako gehienez $max pertsona", Toast.LENGTH_SHORT).show()
                         return@TextButton
                     }
                     onCreate(
@@ -798,10 +1326,10 @@ private fun CreateReservationDialog(
                         selectedSlotStartMinutes % 60
                     )
                 }
-            ) { Text(text = "Crear") }
+            ) { Text(text = "Sortu") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(text = "Cancelar") }
+            TextButton(onClick = onDismiss) { Text(text = "Utzi") }
         }
     )
 }

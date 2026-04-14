@@ -124,7 +124,7 @@ fun KitchenPlatosStockScreen(
                                         value = stockDialogText,
                                         onValueChange = { stockDialogText = it },
                                         singleLine = true,
-                                        label = { Text(text = "Stock") },
+                                        label = { Text(text = "Stocka") },
                                         keyboardOptions =
                                                 KeyboardOptions(keyboardType = KeyboardType.Number),
                                         modifier = Modifier.fillMaxWidth()
@@ -383,7 +383,7 @@ fun KitchenIngredientesStockScreen(
                                         value = stockDialogText,
                                         onValueChange = { stockDialogText = it },
                                         singleLine = true,
-                                        label = { Text(text = "Stock") },
+                                        label = { Text(text = "Stocka") },
                                         keyboardOptions =
                                                 KeyboardOptions(keyboardType = KeyboardType.Number),
                                         modifier = Modifier.fillMaxWidth()

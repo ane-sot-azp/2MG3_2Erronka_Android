@@ -38,17 +38,22 @@ data class CategoriesUiState(
 )
 
 class CategoriesViewModel(private val sessionManager: SessionManager) : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://192.168.10.55:5101/api"
+    private val apiBaseUrlLanPrimary = "http://192.168.10.5:5000/api"
 
     private val _uiState = MutableStateFlow(CategoriesUiState())
     val uiState: StateFlow<CategoriesUiState> = _uiState
 
-    fun load(tableId: Int) {
+    fun load(tableId: Int, initialErreserbaId: Int) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
                 val tableInfo = withContext(Dispatchers.IO) { fetchTableInfo(tableId) }
-                val erreserbaId = withContext(Dispatchers.IO) { ensureErreserba(tableId, tableInfo.second) }
+                val erreserbaId =
+                    if (initialErreserbaId > 0) {
+                        initialErreserbaId
+                    } else {
+                        withContext(Dispatchers.IO) { ensureErreserba(tableId, tableInfo.second) }
+                    }
                 val categories = withContext(Dispatchers.IO) { fetchCategories() }
                 _uiState.value =
                     _uiState.value.copy(
@@ -354,8 +359,8 @@ class CategoriesViewModel(private val sessionManager: SessionManager) : ViewMode
         return listOf(
             base,
             "$noApi/api",
-            "http://192.168.10.55:5101/api",
-            "http://192.168.10.55:5101/api"
+            "http://192.168.10.5:5000/api",
+            "http://192.168.10.5:5000/api"
         ).distinct()
     }
 }

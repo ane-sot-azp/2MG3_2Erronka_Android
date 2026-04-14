@@ -72,10 +72,10 @@ fun PlaterakScreen(
         onLogout = onLogout,
         onLogoClick = onBack,
         showMiddleAction = true,
-        middleIconContentDescription = "Reservas",
+        middleIconContentDescription = "Erreserbak",
         onMiddleAction = onReservations,
         rightIconResId = com.example.osislogin.R.drawable.chat,
-        rightIconContentDescription = "Chat",
+        rightIconContentDescription = "Txata",
         onRightAction = onChat,
         rightBadgeCount = chatUnreadCount
     ) { contentModifier ->
@@ -140,9 +140,12 @@ fun PlaterakScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(uiState.produktuak, key = { it.id }) { produktua ->
-                        val qty = uiState.pendingQtyByProduktuaId[produktua.id] ?: 0
-                        val canAdd = qty < produktua.stock
-                        val canRemove = qty > 0
+                        val pendingQty = uiState.pendingQtyByProduktuaId[produktua.id] ?: 0
+                        val orderedQty = uiState.orderedQtyByProduktuaId[produktua.id] ?: 0
+                        val editableOrderedQty = uiState.editableOrderedQtyByProduktuaId[produktua.id] ?: 0
+                        val displayedQty = orderedQty + pendingQty
+                        val canAdd = pendingQty < produktua.stock
+                        val canRemove = pendingQty > 0 || editableOrderedQty > 0
 
                         Surface(
                             color = Color.White,
@@ -170,7 +173,7 @@ fun PlaterakScreen(
                                 )
 
                                 Text(
-                                    text = "Stock: ${produktua.stock}",
+                                    text = "Stocka: ${produktua.stock}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.fillMaxWidth(),
@@ -199,7 +202,7 @@ fun PlaterakScreen(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
-                                            text = qty.toString(),
+                                            text = displayedQty.toString(),
                                             style = MaterialTheme.typography.titleMedium,
                                             color = Color.White
                                         )

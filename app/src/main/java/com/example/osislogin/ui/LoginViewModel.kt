@@ -43,7 +43,7 @@ class LoginViewModel(
     private val database: AppDatabase,
     private val sessionManager: SessionManager
 ) : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://192.168.10.55:5101/api"
+    private val apiBaseUrlLanPrimary = "http://192.168.10.5:5000/api"
 
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState
@@ -184,8 +184,8 @@ class LoginViewModel(
         return listOf(
             base,
             "$noApi/api",
-            "http://192.168.10.55:5101/api",
-            "http://192.168.10.55:5101/api"
+            "http://192.168.10.5:5000/api",
+            "http://192.168.10.5:5000/api"
         ).distinct()
     }
 
@@ -268,9 +268,9 @@ class LoginViewModel(
         }
         val tail = errors.takeLast(4).joinToString("\n")
         throw IllegalStateException(
-            "No se ha podido cargar la lista de empleados.\n" +
-                "Comprueba que la API está arrancada y accesible desde este dispositivo.\n" +
-                "Últimos intentos:\n$tail"
+            "Ezin izan da langileen zerrenda kargatu.\n" +
+                "Egiaztatu APIa martxan dagoela eta gailu honetatik eskuragarri dagoela.\n" +
+                "Azken saiakerak:\n$tail"
         )
     }
 

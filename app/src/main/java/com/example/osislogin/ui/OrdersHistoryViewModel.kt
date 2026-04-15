@@ -25,6 +25,7 @@ data class EskariaProductUiModel(
 data class EskariaUiModel(
     val id: Int,
     val egoera: String,
+    val statusChanged: Boolean,
     val total: Double,
     val products: List<EskariaProductUiModel>
 )
@@ -34,20 +35,29 @@ data class OrdersHistoryUiState(
     val error: String? = null,
     val tableLabel: String? = null,
     val guestCount: Int? = null,
+    val tableId: Int = 0,
     val erreserbaId: Int = 0,
     val orders: List<EskariaUiModel> = emptyList(),
     val totalWithVat: Double? = null
 )
 
 class OrdersHistoryViewModel(private val sessionManager: SessionManager) : ViewModel() {
-    private val apiBaseUrlLanPrimary = "http://192.168.10.5:5000/api"
+    private val apiBaseUrlLanPrimary = "http://192.168.10.55:5101/api"
 
     private val _uiState = MutableStateFlow(OrdersHistoryUiState())
     val uiState: StateFlow<OrdersHistoryUiState> = _uiState
 
+    private val lastEgoeraByEskariaId = HashMap<Int, String>()
+
     fun load(tableId: Int, erreserbaId: Int) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null, erreserbaId = erreserbaId)
+            _uiState.value =
+                _uiState.value.copy(
+                    isLoading = true,
+                    error = null,
+                    tableId = tableId,
+                    erreserbaId = erreserbaId
+                )
             try {
                 val tableInfo = withContext(Dispatchers.IO) { fetchTableInfo(tableId) }
                 val orders = withContext(Dispatchers.IO) { fetchEskariakByErreserba(erreserbaId) }
@@ -65,6 +75,12 @@ class OrdersHistoryViewModel(private val sessionManager: SessionManager) : ViewM
                 _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: e.javaClass.simpleName)
             }
         }
+    }
+
+    fun refresh() {
+        val current = _uiState.value
+        if (current.tableId <= 0 || current.erreserbaId <= 0) return
+        load(tableId = current.tableId, erreserbaId = current.erreserbaId)
     }
 
     fun cancelEskaria(eskariaId: Int) {
@@ -101,6 +117,29 @@ class OrdersHistoryViewModel(private val sessionManager: SessionManager) : ViewM
                 val langileaId = sessionManager.userId.first() ?: 0
                 withContext(Dispatchers.IO) { postOrdaindu(erreserbaId, totalWithVat, langileaId) }
                 _uiState.value = _uiState.value.copy(isLoading = false)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: e.javaClass.simpleName)
+            }
+        }
+    }
+
+    fun markZerbitzatua(eskariaId: Int) {
+        val erreserbaId = _uiState.value.erreserbaId
+        if (erreserbaId <= 0 || eskariaId <= 0) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            try {
+                withContext(Dispatchers.IO) { patchEskariaEgoera(eskariaId, "zerbitzatua") }
+                lastEgoeraByEskariaId[eskariaId] = "zerbitzatua"
+                val orders = withContext(Dispatchers.IO) { fetchEskariakByErreserba(erreserbaId) }
+                val subtotal = orders.sumOf { it.products.sumOf { p -> p.unitPrice * p.qty } }
+                val totalWithVat = subtotal * 1.1
+                _uiState.value =
+                    _uiState.value.copy(
+                        isLoading = false,
+                        orders = orders.sortedByDescending { it.id },
+                        totalWithVat = totalWithVat
+                    )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: e.javaClass.simpleName)
             }
@@ -166,6 +205,10 @@ class OrdersHistoryViewModel(private val sessionManager: SessionManager) : ViewM
                     val obj = array.optJSONObject(i) ?: continue
                     val id = obj.optInt("id", obj.optInt("Id", -1)).takeIf { it > 0 } ?: continue
                     val egoera = obj.optString("egoera", obj.optString("Egoera", "Bidalita")).trim().ifBlank { "Bidalita" }
+                    val previousEgoera = lastEgoeraByEskariaId[id]
+                    val statusChanged =
+                        previousEgoera != null &&
+                            previousEgoera.trim().equals(egoera.trim(), ignoreCase = true).not()
                     val prezioa = obj.optDouble("prezioa", obj.optDouble("Prezioa", Double.NaN))
                     val prodsArr =
                         obj.optJSONArray("produktuak")
@@ -189,7 +232,8 @@ class OrdersHistoryViewModel(private val sessionManager: SessionManager) : ViewM
 
                     val computedTotal = products.sumOf { it.unitPrice * it.qty }
                     val total = if (prezioa.isNaN()) computedTotal else prezioa
-                    out.add(EskariaUiModel(id = id, egoera = egoera, total = total, products = products))
+                    out.add(EskariaUiModel(id = id, egoera = egoera, statusChanged = statusChanged, total = total, products = products))
+                    lastEgoeraByEskariaId[id] = egoera
                 }
                 return out
             } catch (e: Exception) {
@@ -244,6 +288,28 @@ class OrdersHistoryViewModel(private val sessionManager: SessionManager) : ViewM
         throw IllegalStateException("Ezin izan da erreserba ordaindu ($lastError)")
     }
 
+    private fun patchEskariaEgoera(eskariaId: Int, egoera: String) {
+        val dto = JSONObject().put("Egoera", egoera)
+        var lastError: String? = null
+        val candidates =
+            apiBaseUrlCandidates().flatMap { baseUrl ->
+                listOf(
+                    "${baseUrl.trimEnd('/')}/Eskariak/$eskariaId/egoera",
+                    "${baseUrl.trimEnd('/')}/eskariak/$eskariaId/egoera"
+                )
+            }.distinct()
+        for (url in candidates) {
+            try {
+                val (code, body) = httpPatchJson(url, dto)
+                if (code in 200..299) return
+                lastError = "url=$url code=$code body=${body.take(250)}"
+            } catch (e: Exception) {
+                lastError = "url=$url error=${e.message ?: e.javaClass.simpleName}"
+            }
+        }
+        throw IllegalStateException("Ezin izan da eskariaren egoera eguneratu ($lastError)")
+    }
+
     private fun httpGet(url: String): Pair<Int, String> {
         val conn =
             (URL(url).openConnection() as HttpURLConnection).apply {
@@ -252,6 +318,23 @@ class OrdersHistoryViewModel(private val sessionManager: SessionManager) : ViewM
                 connectTimeout = 15000
                 readTimeout = 15000
             }
+        val code = conn.responseCode
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        return code to body
+    }
+
+    private fun httpPatchJson(url: String, jsonBody: JSONObject): Pair<Int, String> {
+        val conn =
+            (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "PATCH"
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Accept", "application/json")
+                doOutput = true
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+        conn.outputStream.use { os -> os.write(jsonBody.toString().toByteArray(Charsets.UTF_8)) }
         val code = conn.responseCode
         val stream = if (code in 200..299) conn.inputStream else conn.errorStream
         val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
@@ -300,8 +383,8 @@ class OrdersHistoryViewModel(private val sessionManager: SessionManager) : ViewM
         return listOf(
             base,
             "$noApi/api",
-            "http://192.168.10.5:5000/api",
-            "http://192.168.10.5:5000/api"
+            "http://192.168.10.55:5101/api",
+            "http://192.168.10.55:5101/api"
         ).distinct()
     }
 }

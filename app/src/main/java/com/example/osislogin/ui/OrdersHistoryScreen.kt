@@ -13,11 +13,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.TableRestaurant
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -104,6 +107,10 @@ fun OrdersHistoryScreen(
                     ) {
                         Text(text = "Faktura itxi")
                     }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    IconButton(enabled = !uiState.isLoading, onClick = { viewModel.refresh() }) {
+                        Icon(imageVector = Icons.Filled.Refresh, contentDescription = "Eguneratu")
+                    }
                 }
 
                 if (uiState.orders.isEmpty() && !uiState.isLoading && uiState.error.isNullOrBlank()) {
@@ -121,6 +128,7 @@ fun OrdersHistoryScreen(
                     ) {
                         items(uiState.orders, key = { it.id }) { order ->
                             val isLocked = viewModel.isLocked(order.egoera)
+                            val isReady = order.egoera.trim().equals("prest", ignoreCase = true)
                             val statusColor = statusColor(order.egoera)
                             Surface(
                                 color = statusColor.copy(alpha = 0.14f),
@@ -135,18 +143,38 @@ fun OrdersHistoryScreen(
                                     ) {
                                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                             Text(text = "Eskaria #${order.id}", style = MaterialTheme.typography.titleSmall)
-                                            Text(
-                                                text = "Egoera: ${order.egoera}",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = "Egoera: ${order.egoera}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                if (isReady) {
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Icon(
+                                                        imageVector = Icons.Filled.CheckCircle,
+                                                        contentDescription = "Prest",
+                                                        tint = Color(0xFF2E7D32)
+                                                    )
+                                                }
+                                            }
                                         }
                                         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             Text(
                                                 text = "${"%.2f".format(order.total)}€",
                                                 style = MaterialTheme.typography.titleSmall
                                             )
-                                            if (!isLocked) {
+                                            if (isReady) {
+                                                TextButton(onClick = { viewModel.markZerbitzatua(order.id) }) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.CheckCircle,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(text = "Zerbitzatua", color = MaterialTheme.colorScheme.primary)
+                                                }
+                                            } else if (!isLocked) {
                                                 TextButton(onClick = { viewModel.cancelEskaria(order.id) }) {
                                                     Text(text = "Ezeztatu", color = MaterialTheme.colorScheme.error)
                                                 }

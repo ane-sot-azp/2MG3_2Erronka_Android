@@ -676,6 +676,21 @@ private fun EditReservationDialog(
         title = { Text(text = "Erreserba editatu") },
         text = {
             val slots = remember(selectedShift) { generateSlotMinutes(selectedShift) }
+            val disabledSlots =
+                remember(allReservations, dateMillis, selectedTableId, slots) {
+                    slots
+                        .asSequence()
+                        .filter {
+                            isSlotBlockedForTable(
+                                reservations = allReservations,
+                                selectedDateMillis = dateMillis,
+                                tableId = selectedTableId,
+                                slotStartMinutes = it,
+                                excludeReservationId = reservation.id
+                            )
+                        }
+                        .toSet()
+                }
             val tablesContent: @Composable (Modifier) -> Unit = { modifier ->
                 LazyColumn(
                     modifier = modifier,
@@ -765,6 +780,7 @@ private fun EditReservationDialog(
                         ReservationTimeSlotPicker(
                             slots = slots,
                             selectedSlotStartMinutes = selectedSlotStartMinutes,
+                            disabledSlots = disabledSlots,
                             onSlotSelected = { selectedSlotStartMinutes = it }
                         )
                     }
@@ -827,6 +843,7 @@ private fun EditReservationDialog(
                     ReservationTimeSlotPicker(
                         slots = slots,
                         selectedSlotStartMinutes = selectedSlotStartMinutes,
+                        disabledSlots = disabledSlots,
                         onSlotSelected = { selectedSlotStartMinutes = it }
                     )
 
@@ -846,6 +863,18 @@ private fun EditReservationDialog(
                     val max = selectedTable?.maxComensales ?: 0
                     if (max > 0 && guests > max) {
                         Toast.makeText(context, "Mahaia honetarako gehienez $max pertsona", Toast.LENGTH_SHORT).show()
+                        return@TextButton
+                    }
+                    if (
+                        isSlotBlockedForTable(
+                            reservations = allReservations,
+                            selectedDateMillis = dateMillis,
+                            tableId = tableId,
+                            slotStartMinutes = selectedSlotStartMinutes,
+                            excludeReservationId = reservation.id
+                        )
+                    ) {
+                        Toast.makeText(context, "Ordu horretan mahaia ez dago erabilgarri", Toast.LENGTH_SHORT).show()
                         return@TextButton
                     }
                     onSave(
@@ -870,6 +899,7 @@ private fun EditReservationDialog(
 private fun ReservationTimeSlotPicker(
     slots: List<Int>,
     selectedSlotStartMinutes: Int,
+    disabledSlots: Set<Int>,
     onSlotSelected: (Int) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -881,18 +911,40 @@ private fun ReservationTimeSlotPicker(
         ) {
             slots.forEach { slotMinutes ->
                 val isSelected = slotMinutes == selectedSlotStartMinutes
+                val enabled = isSelected || !disabledSlots.contains(slotMinutes)
                 if (isSelected) {
                     Button(onClick = { onSlotSelected(slotMinutes) }) {
                         Text(text = formatSlotMinutes(slotMinutes))
                     }
                 } else {
-                    OutlinedButton(onClick = { onSlotSelected(slotMinutes) }) {
+                    OutlinedButton(enabled = enabled, onClick = { onSlotSelected(slotMinutes) }) {
                         Text(text = formatSlotMinutes(slotMinutes))
                     }
                 }
             }
         }
     }
+}
+
+private const val ReservationBlockMinutes = 90
+
+private fun isSlotBlockedForTable(
+    reservations: List<ReservationUiModel>,
+    selectedDateMillis: Long,
+    tableId: Int,
+    slotStartMinutes: Int,
+    excludeReservationId: Int?
+): Boolean {
+    val selectedKey = ymdKey(selectedDateMillis)
+    for (r in reservations) {
+        if (r.ordainduta != 0) continue
+        if (excludeReservationId != null && r.id == excludeReservationId) continue
+        if (r.mahaiakId != tableId) continue
+        if (ymdKey(r.egunaOrduaMillis) != selectedKey) continue
+        val start = slotStartMinutesFromMillisOrNull(r.egunaOrduaMillis) ?: continue
+        if (slotStartMinutes in start until (start + ReservationBlockMinutes)) return true
+    }
+    return false
 }
 
 private fun generateSlotMinutes(shift: Shift): List<Int> {
@@ -943,7 +995,10 @@ private fun tablesWithAvailability(
             .filter { it.ordainduta == 0 }
             .filter { excludeReservationId == null || it.id != excludeReservationId }
             .filter { ymdKey(it.egunaOrduaMillis) == selectedKey }
-            .filter { slotStartMinutesFromMillisOrNull(it.egunaOrduaMillis) == slotStartMinutes }
+            .filter {
+                val start = slotStartMinutesFromMillisOrNull(it.egunaOrduaMillis) ?: return@filter false
+                slotStartMinutes in start until (start + ReservationBlockMinutes)
+            }
             .toList()
 
     val byTableId = HashMap<Int, ReservationUiModel>(relevant.size)
@@ -1122,6 +1177,22 @@ private fun CreateReservationDialog(
         title = { Text(text = "Erreserba berria") },
         text = {
             val slots = remember(selectedShift) { generateSlotMinutes(selectedShift) }
+            val disabledSlots =
+                remember(allReservations, dateMillis, selectedTableId, slots) {
+                    val tableId = selectedTableId ?: return@remember emptySet()
+                    slots
+                        .asSequence()
+                        .filter {
+                            isSlotBlockedForTable(
+                                reservations = allReservations,
+                                selectedDateMillis = dateMillis,
+                                tableId = tableId,
+                                slotStartMinutes = it,
+                                excludeReservationId = null
+                            )
+                        }
+                        .toSet()
+                }
             val tablesContent: @Composable (Modifier) -> Unit = { modifier ->
                 LazyColumn(
                     modifier = modifier,
@@ -1223,6 +1294,7 @@ private fun CreateReservationDialog(
                         ReservationTimeSlotPicker(
                             slots = slots,
                             selectedSlotStartMinutes = selectedSlotStartMinutes,
+                            disabledSlots = disabledSlots,
                             onSlotSelected = { selectedSlotStartMinutes = it }
                         )
                     }
@@ -1295,6 +1367,7 @@ private fun CreateReservationDialog(
                     ReservationTimeSlotPicker(
                         slots = slots,
                         selectedSlotStartMinutes = selectedSlotStartMinutes,
+                        disabledSlots = disabledSlots,
                         onSlotSelected = { selectedSlotStartMinutes = it }
                     )
 
@@ -1314,6 +1387,18 @@ private fun CreateReservationDialog(
                     val max = selectedTable?.maxComensales ?: 0
                     if (max > 0 && guests > max) {
                         Toast.makeText(context, "Mahaia honetarako gehienez $max pertsona", Toast.LENGTH_SHORT).show()
+                        return@TextButton
+                    }
+                    if (
+                        isSlotBlockedForTable(
+                            reservations = allReservations,
+                            selectedDateMillis = dateMillis,
+                            tableId = tableId,
+                            slotStartMinutes = selectedSlotStartMinutes,
+                            excludeReservationId = null
+                        )
+                    ) {
+                        Toast.makeText(context, "Ordu horretan mahaia ez dago erabilgarri", Toast.LENGTH_SHORT).show()
                         return@TextButton
                     }
                     onCreate(

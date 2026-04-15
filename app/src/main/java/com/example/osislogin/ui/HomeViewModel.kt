@@ -204,6 +204,10 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
                 val shift = current.selectedShift
                 val reservationId =
                     withContext(Dispatchers.IO) {
+                        val existing = fetchErreserbak()
+                        if (isSlotBlockedForTable(existing, dateMillis, tableId, slotStartMinutes)) {
+                            throw IllegalStateException("Ordu horretan mahaia ez dago erabilgarri")
+                        }
                         postReservationNow(
                             tableId = tableId,
                             guestCount = guestCount,
@@ -219,6 +223,25 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: e.javaClass.simpleName)
             }
         }
+    }
+
+    private fun isSlotBlockedForTable(
+        reservations: List<ApiErreserba>,
+        selectedDateMillis: Long,
+        tableId: Int,
+        slotStartMinutes: Int
+    ): Boolean {
+        val selectedYmd = dateFormatter.format(Date(selectedDateMillis))
+        for (r in reservations) {
+            if (r.ordainduta != 0) continue
+            if (r.mahaiakId != tableId) continue
+            val ymd = normalizeDateYmd(r.egunaOrdua) ?: continue
+            if (ymd != selectedYmd) continue
+            val startMillis = parseMillis(r.egunaOrdua) ?: continue
+            val start = slotStartMinutesFromMillis(startMillis) ?: continue
+            if (slotStartMinutes in start until (start + 90)) return true
+        }
+        return false
     }
 
     fun logout() {
@@ -376,7 +399,7 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
                     val slot = slotStartMinutesFromMillis(startMillis) ?: return@mapNotNull null
                     val shift = shiftFromSlotMinutes(slot) ?: return@mapNotNull null
                     if (shift != selectedShift) return@mapNotNull null
-                    if (slot != selectedSlotStartMinutes) return@mapNotNull null
+                    if (selectedSlotStartMinutes !in slot until (slot + 90)) return@mapNotNull null
                     Triple(e, ymd, startMillis)
                 }
 
@@ -480,6 +503,7 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
                 for (i in 0 until array.length()) {
                     val obj = array.optJSONObject(i) ?: continue
                     val egoera = obj.optString("egoera", obj.optString("Egoera", "")).trim().lowercase()
+                    if (egoera == "prest" || egoera.contains("prest")) return true
                     if (egoera == "egina" || egoera.contains("egina")) return true
                 }
                 return false

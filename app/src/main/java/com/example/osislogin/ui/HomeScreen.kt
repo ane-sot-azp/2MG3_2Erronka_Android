@@ -69,6 +69,7 @@ import java.util.Locale
 fun HomeScreen(
     viewModel: HomeViewModel,
     onLogout: () -> Unit,
+    chatEnabled: Boolean,
     onChat: () -> Unit,
     onReservations: () -> Unit,
     chatUnreadCount: Int,
@@ -94,6 +95,7 @@ fun HomeScreen(
         showMiddleAction = true,
         middleIconContentDescription = "Erreserbak",
         onMiddleAction = onReservations,
+        showRightAction = chatEnabled,
         rightIconResId = R.drawable.chat,
         rightIconContentDescription = "Txata",
         onRightAction = onChat,

@@ -23,7 +23,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.TableRestaurant
@@ -54,9 +55,14 @@ fun PlaterakScreen(
     kategoriKey: String,
     viewModel: PlaterakViewModel,
     onLogout: () -> Unit,
+    chatEnabled: Boolean,
     onChat: () -> Unit,
     onReservations: () -> Unit,
     chatUnreadCount: Int,
+    draftQtyByProduktuaId: Map<Int, Int>,
+    baseQtyByProduktuaId: Map<Int, Int>,
+    onAddDraftItem: (produktuaId: Int, unitPrice: Double, delta: Int) -> Unit,
+    onOpenDraftConfirm: () -> Unit,
     onBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -70,9 +76,12 @@ fun PlaterakScreen(
     AppChrome(
         onLogout = onLogout,
         onLogoClick = onBack,
+        navigationIcon = Icons.Filled.Apps,
+        navigationIconContentDescription = "Kategoriak",
         showMiddleAction = true,
         middleIconContentDescription = "Erreserbak",
         onMiddleAction = onReservations,
+        showRightAction = chatEnabled,
         rightIconResId = com.example.osislogin.R.drawable.chat,
         rightIconContentDescription = "Txata",
         onRightAction = onChat,
@@ -85,7 +94,7 @@ fun PlaterakScreen(
             }
 
             Column(modifier = Modifier.fillMaxSize()) {
-                val hasPending = uiState.pendingQtyByProduktuaId.isNotEmpty()
+                val hasDraft = draftQtyByProduktuaId.isNotEmpty()
                 val tableLabel = uiState.tableLabel?.takeIf { it.isNotBlank() } ?: tableId.toString()
                 val guestsText = uiState.guestCount?.toString() ?: "—"
                 Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -129,14 +138,18 @@ fun PlaterakScreen(
                         modifier =
                             Modifier.align(Alignment.CenterEnd)
                                 .clip(CircleShape)
-                                .background(if (hasPending) Color(0xFFF3863A) else Color(0xFFBDBDBD))
+                                .background(if (hasDraft) Color(0xFFF3863A) else Color(0xFFBDBDBD))
                     ) {
                         IconButton(
-                            enabled = hasPending,
-                            onClick = { viewModel.submitEskaria(onDone = onBack) },
+                            enabled = hasDraft,
+                            onClick = onOpenDraftConfirm,
                             modifier = Modifier.size(44.dp)
                         ) {
-                            Icon(imageVector = Icons.Filled.Check, contentDescription = null, tint = Color.White)
+                            Icon(
+                                imageVector = Icons.Filled.CheckCircle,
+                                contentDescription = "Eskaera",
+                                tint = Color.White
+                            )
                         }
                     }
                 }
@@ -157,12 +170,11 @@ fun PlaterakScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(uiState.produktuak, key = { it.id }) { produktua ->
-                        val pendingQty = uiState.pendingQtyByProduktuaId[produktua.id] ?: 0
-                        val orderedQty = uiState.orderedQtyByProduktuaId[produktua.id] ?: 0
-                        val editableOrderedQty = uiState.editableOrderedQtyByProduktuaId[produktua.id] ?: 0
-                        val displayedQty = orderedQty + pendingQty
+                        val pendingQty = draftQtyByProduktuaId[produktua.id] ?: 0
+                        val baseQty = baseQtyByProduktuaId[produktua.id] ?: 0
+                        val displayedQty = baseQty + pendingQty
                         val canAdd = pendingQty < produktua.stock
-                        val canRemove = pendingQty > 0 || editableOrderedQty > 0
+                        val canRemove = pendingQty > 0
 
                         Surface(
                             color = Color.White,
@@ -206,7 +218,9 @@ fun PlaterakScreen(
                                 ) {
                                     QuantityButton(
                                         enabled = canRemove,
-                                        onClick = { viewModel.changeQuantity(produktua.id, -1) },
+                                        onClick = {
+                                            if (pendingQty > 0) onAddDraftItem(produktua.id, produktua.price, -1)
+                                        },
                                         icon = Icons.Filled.Remove
                                     )
 
@@ -227,7 +241,7 @@ fun PlaterakScreen(
 
                                     QuantityButton(
                                         enabled = canAdd,
-                                        onClick = { viewModel.changeQuantity(produktua.id, +1) },
+                                        onClick = { onAddDraftItem(produktua.id, produktua.price, +1) },
                                         icon = Icons.Filled.Add
                                     )
                                 }

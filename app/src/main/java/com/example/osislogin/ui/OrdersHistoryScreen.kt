@@ -13,10 +13,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.TableRestaurant
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -44,13 +48,17 @@ fun OrdersHistoryScreen(
     erreserbaId: Int,
     viewModel: OrdersHistoryViewModel,
     onLogout: () -> Unit,
+    chatEnabled: Boolean,
     onChat: () -> Unit,
     onReservations: () -> Unit,
     chatUnreadCount: Int,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onAddProducts: (EskariaUiModel) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var goBackAfterClose by remember { mutableStateOf(false) }
+    var editingOrder by remember { mutableStateOf<EskariaUiModel?>(null) }
+    var editingQtyByProduktuaId by remember { mutableStateOf<Map<Int, Int>>(emptyMap()) }
 
     LaunchedEffect(tableId, erreserbaId) {
         viewModel.load(tableId = tableId, erreserbaId = erreserbaId)
@@ -62,6 +70,7 @@ fun OrdersHistoryScreen(
         showMiddleAction = true,
         middleIconContentDescription = "Erreserbak",
         onMiddleAction = onReservations,
+        showRightAction = chatEnabled,
         rightIconResId = com.example.osislogin.R.drawable.chat,
         rightIconContentDescription = "Txata",
         onRightAction = onChat,
@@ -175,8 +184,34 @@ fun OrdersHistoryScreen(
                                                     Text(text = "Zerbitzatua", color = MaterialTheme.colorScheme.primary)
                                                 }
                                             } else if (!isLocked) {
-                                                TextButton(onClick = { viewModel.cancelEskaria(order.id) }) {
-                                                    Text(text = "Ezeztatu", color = MaterialTheme.colorScheme.error)
+                                                Row {
+                                                    TextButton(
+                                                        onClick = {
+                                                            editingOrder = order
+                                                            editingQtyByProduktuaId =
+                                                                order.products.associate { it.produktuaId to it.qty }
+                                                        }
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Filled.Edit,
+                                                            contentDescription = null,
+                                                            tint = MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text(text = "Editatu", color = MaterialTheme.colorScheme.onSurface)
+                                                    }
+                                                    TextButton(onClick = { onAddProducts(order) }) {
+                                                        Icon(
+                                                            imageVector = Icons.Filled.Add,
+                                                            contentDescription = null,
+                                                            tint = MaterialTheme.colorScheme.primary
+                                                        )
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text(text = "Gehitu", color = MaterialTheme.colorScheme.primary)
+                                                    }
+                                                    TextButton(onClick = { viewModel.cancelEskaria(order.id) }) {
+                                                        Text(text = "Ezeztatu", color = MaterialTheme.colorScheme.error)
+                                                    }
                                                 }
                                             } else {
                                                 Text(
@@ -217,6 +252,78 @@ fun OrdersHistoryScreen(
                     text = uiState.error ?: "",
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp)
+                )
+            }
+
+            if (editingOrder != null) {
+                val order = editingOrder!!
+                AlertDialog(
+                    onDismissRequest = { editingOrder = null },
+                    title = { Text(text = "Eskaria editatu (#${order.id})") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (order.products.isEmpty()) {
+                                Text(text = "Ez dago produkturik")
+                            } else {
+                                order.products.forEach { p ->
+                                    val qty = editingQtyByProduktuaId[p.produktuaId] ?: p.qty
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(text = p.name, style = MaterialTheme.typography.bodyMedium)
+                                            Text(
+                                                text = "${"%.2f".format(p.unitPrice)}€",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(
+                                                onClick = {
+                                                    val next = (qty - 1).coerceAtLeast(0)
+                                                    editingQtyByProduktuaId =
+                                                        editingQtyByProduktuaId.toMutableMap().apply {
+                                                            put(p.produktuaId, next)
+                                                        }
+                                                }
+                                            ) {
+                                                Icon(imageVector = Icons.Filled.Remove, contentDescription = null)
+                                            }
+                                            Text(text = qty.toString(), modifier = Modifier.width(28.dp), textAlign = TextAlign.Center)
+                                            IconButton(
+                                                onClick = {
+                                                    val next = qty + 1
+                                                    editingQtyByProduktuaId =
+                                                        editingQtyByProduktuaId.toMutableMap().apply { put(p.produktuaId, next) }
+                                                }
+                                            ) {
+                                                Icon(imageVector = Icons.Filled.Add, contentDescription = null)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                val updated =
+                                    order.products.mapNotNull { p ->
+                                        val qty = editingQtyByProduktuaId[p.produktuaId] ?: p.qty
+                                        if (qty <= 0) null else p.copy(qty = qty)
+                                    }
+                                viewModel.updateEskariaProducts(orderId = order.id, egoera = order.egoera, products = updated)
+                                editingOrder = null
+                            }
+                        ) { Text(text = "Gorde") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { editingOrder = null }) { Text(text = "Utzi") }
+                    }
                 )
             }
 

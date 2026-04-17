@@ -3,6 +3,7 @@ package com.example.osislogin.util
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -17,6 +18,7 @@ class SessionManager(private val context: Context) {
         private val USER_ID_KEY = intPreferencesKey("user_id")
         private val USER_EMAIL_KEY = stringPreferencesKey("user_email")
         private val USER_NAME_KEY = stringPreferencesKey("user_name")
+        private val CHAT_ENABLED_KEY = booleanPreferencesKey("chat_enabled")
     }
 
     val userId: Flow<Int?> = context.dataStore.data.map { preferences ->
@@ -31,6 +33,10 @@ class SessionManager(private val context: Context) {
         preferences[USER_NAME_KEY]
     }
 
+    val chatEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[CHAT_ENABLED_KEY] ?: false
+    }
+
     suspend fun saveUserSession(userId: Int, email: String, name: String) {
         context.dataStore.edit { preferences ->
             preferences[USER_ID_KEY] = userId
@@ -43,6 +49,12 @@ class SessionManager(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences[USER_EMAIL_KEY] = email
             preferences[USER_NAME_KEY] = name
+        }
+    }
+
+    suspend fun setChatEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[CHAT_ENABLED_KEY] = enabled
         }
     }
 

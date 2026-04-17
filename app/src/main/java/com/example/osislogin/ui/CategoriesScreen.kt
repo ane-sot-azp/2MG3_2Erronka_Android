@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.TableRestaurant
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,10 +34,13 @@ fun CategoriesScreen(
     initialErreserbaId: Int,
     viewModel: CategoriesViewModel,
     onLogout: () -> Unit,
+    chatEnabled: Boolean,
     onChat: () -> Unit,
     onReservations: () -> Unit,
     chatUnreadCount: Int,
-    onBack: () -> Unit,
+    hasDraft: Boolean,
+    onDraftTick: () -> Unit,
+    onGoToTables: () -> Unit,
     onTicketClick: (tableId: Int, erreserbaId: Int) -> Unit,
     onCategorySelected: (tableId: Int, erreserbaId: Int, kategoriKey: String) -> Unit
 ) {
@@ -48,12 +52,13 @@ fun CategoriesScreen(
 
     AppChrome(
         onLogout = onLogout,
-        onLogoClick = onBack,
-        navigationIcon = Icons.Filled.Apps,
-        navigationIconContentDescription = "Mahaiak",
+        onLogoClick = if (hasDraft) onDraftTick else onGoToTables,
+        navigationIcon = if (hasDraft) Icons.Filled.CheckCircle else Icons.Filled.TableRestaurant,
+        navigationIconContentDescription = if (hasDraft) "Eskaera" else "Mahaiak",
         showMiddleAction = true,
         middleIconContentDescription = "Erreserbak",
         onMiddleAction = onReservations,
+        showRightAction = chatEnabled,
         rightIconResId = R.drawable.chat,
         rightIconContentDescription = "Txata",
         onRightAction = onChat,

@@ -124,7 +124,10 @@ class LoginViewModel(
                             .optString("izena", data.optString("Izena", current.selectedUserLabel))
                             .trim()
                             .ifBlank { current.selectedUserLabel }
+                    val chatEnabled =
+                        data.optBoolean("txat_sarbidea", data.optBoolean("Txat_sarbidea", false))
                     sessionManager.saveUserSession(userId = userId, email = kodea.toString(), name = name)
+                    sessionManager.setChatEnabled(chatEnabled)
                     _uiState.value = _uiState.value.copy(isLoading = false, isSuccess = true)
                 } else {
                     val message = obj.optString("message", obj.optString("Message", "Login errorea")).trim()
@@ -157,7 +160,10 @@ class LoginViewModel(
                             .optString("izena", data.optString("Izena", kodeaText))
                             .trim()
                             .ifBlank { kodeaText }
+                    val chatEnabled =
+                        data.optBoolean("txat_sarbidea", data.optBoolean("Txat_sarbidea", false))
                     sessionManager.saveUserSession(userId = userId, email = kodeaText, name = name)
+                    sessionManager.setChatEnabled(chatEnabled)
                     _uiState.value = _uiState.value.copy(isLoading = false, isSuccess = true)
                 } else {
                     val message = obj.optString("message", obj.optString("Message", "Login errorea")).trim()

@@ -83,6 +83,7 @@ import java.util.TimeZone
 fun ReservationsScreen(
     viewModel: ReservationsViewModel,
     onLogout: () -> Unit,
+    chatEnabled: Boolean,
     onChat: () -> Unit,
     onHome: () -> Unit,
     onReservations: () -> Unit,
@@ -107,6 +108,7 @@ fun ReservationsScreen(
         showMiddleAction = true,
         middleIconContentDescription = "Erreserbak",
         onMiddleAction = onReservations,
+        showRightAction = chatEnabled,
         rightIconResId = R.drawable.chat,
         rightIconContentDescription = "Txata",
         onRightAction = onChat,

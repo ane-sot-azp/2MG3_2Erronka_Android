@@ -3,12 +3,19 @@ package com.example.osislogin.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.ViewModelProvider
+import java.security.MessageDigest
+import java.security.SecureRandom
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.nio.charset.StandardCharsets
+import java.util.Base64
+import javax.crypto.Cipher
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -29,8 +36,10 @@ data class ChatUiState(
 )
 
 class ChatViewModel(userName: String) : ViewModel() {
-    private val hostCandidates = listOf("192.168.10.5", "192.168.10.5")
+    private val hostCandidates = listOf("192.168.10.5")
     private val port = 5555
+    private val sharedChatKey = "OSIS_TXAT_GAKO_2026"
+    private val encryptionPrefix = "ENC|"
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState
@@ -156,18 +165,19 @@ class ChatViewModel(userName: String) : ViewModel() {
 
                     while (isActive) {
                         val line = r.readLine() ?: break
+                        val visibleLine = prepareIncomingMessage(line)
                         withContext(Dispatchers.Main) {
                             _uiState.update { state ->
                                 val isSystem =
-                                    line.contains("sartu da", ignoreCase = true) ||
-                                        line.contains("atera egin da", ignoreCase = true)
+                                    visibleLine.contains("sartu da", ignoreCase = true) ||
+                                        visibleLine.contains("atera egin da", ignoreCase = true)
                                 val newUnread =
                                     when {
                                         isChatOpen -> 0
                                         isSystem -> state.unreadCount
                                         else -> state.unreadCount + 1
                                     }
-                                state.copy(messages = state.messages + line, unreadCount = newUnread)
+                                state.copy(messages = state.messages + visibleLine, unreadCount = newUnread)
                             }
                         }
                     }
@@ -218,7 +228,7 @@ class ChatViewModel(userName: String) : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val w = writer ?: throw IllegalStateException("Writer no disponible")
-                w.write(msg)
+                w.write(encryptMessage(msg))
                 w.newLine()
                 w.flush()
             } catch (e: Exception) {
@@ -236,7 +246,7 @@ class ChatViewModel(userName: String) : ViewModel() {
         val w = writer ?: return
         while (pending.isNotEmpty()) {
             val msg = pending.removeFirst()
-            w.write(msg)
+            w.write(encryptMessage(msg))
             w.newLine()
         }
         w.flush()
@@ -265,5 +275,52 @@ class ChatViewModel(userName: String) : ViewModel() {
         socket = null
         reader = null
         writer = null
+    }
+
+    private fun prepareIncomingMessage(message: String): String {
+        val separatorIndex = message.indexOf(": ")
+        if (separatorIndex < 0) return message
+
+        val sender = message.substring(0, separatorIndex)
+        val payload = message.substring(separatorIndex + 2)
+        if (!payload.startsWith(encryptionPrefix)) return message
+
+        return try {
+            "$sender: ${decryptMessage(payload)}"
+        } catch (_: Exception) {
+            "$sender: [Ezin izan da mezua deszifratu]"
+        }
+    }
+
+    private fun encryptMessage(message: String): String {
+        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+        val iv = ByteArray(16)
+        SecureRandom().nextBytes(iv)
+        cipher.init(Cipher.ENCRYPT_MODE, getSharedKey(), IvParameterSpec(iv))
+
+        val encrypted = cipher.doFinal(message.toByteArray(StandardCharsets.UTF_8))
+        return encryptionPrefix +
+            Base64.getEncoder().encodeToString(iv) +
+            "|" +
+            Base64.getEncoder().encodeToString(encrypted)
+    }
+
+    private fun decryptMessage(payload: String): String {
+        val parts = payload.split("|", limit = 3)
+        require(parts.size == 3 && parts[0] == "ENC") { "Mezu zifratua ez da baliozkoa" }
+
+        val iv = Base64.getDecoder().decode(parts[1])
+        val encrypted = Base64.getDecoder().decode(parts[2])
+        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+        cipher.init(Cipher.DECRYPT_MODE, getSharedKey(), IvParameterSpec(iv))
+
+        val decrypted = cipher.doFinal(encrypted)
+        return String(decrypted, StandardCharsets.UTF_8)
+    }
+
+    private fun getSharedKey(): SecretKeySpec {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val key = digest.digest(sharedChatKey.toByteArray(StandardCharsets.UTF_8))
+        return SecretKeySpec(key, "AES")
     }
 }

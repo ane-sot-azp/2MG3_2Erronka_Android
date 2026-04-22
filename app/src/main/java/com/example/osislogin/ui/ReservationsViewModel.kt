@@ -115,6 +115,16 @@ class ReservationsViewModel(private val sessionManager: SessionManager) : ViewMo
             )
     }
 
+    fun ticketUrlCandidates(erreserbaId: Int): List<String> {
+        if (erreserbaId <= 0) return emptyList()
+        return apiBaseUrlCandidates().flatMap { baseUrl ->
+            listOf(
+                "${baseUrl.trimEnd('/')}/Erreserbak/tiket/$erreserbaId",
+                "${baseUrl.trimEnd('/')}/erreserbak/tiket/$erreserbaId"
+            )
+        }.distinct()
+    }
+
     fun updateReservation(
         reservation: ReservationUiModel,
         newMahaiakId: Int,

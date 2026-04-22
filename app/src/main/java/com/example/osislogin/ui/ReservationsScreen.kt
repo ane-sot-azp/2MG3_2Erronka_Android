@@ -1,6 +1,8 @@
 package com.example.osislogin.ui
 
 import android.content.res.Configuration
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -33,6 +35,7 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
@@ -190,7 +193,15 @@ fun ReservationsScreen(
                         selectedDateMillis = selected,
                         selectedShift = selectedShift,
                         reservations = dayReservations,
-                        onEdit = { reservation -> editingReservation = reservation }
+                        onEdit = { reservation -> editingReservation = reservation },
+                        onViewTicket = { reservation ->
+                            val url = viewModel.ticketUrlCandidates(reservation.id).firstOrNull() ?: return@ReservationsList
+                            try {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Ezin izan da tiketa ireki", Toast.LENGTH_LONG).show()
+                            }
+                        }
                     )
                 }
             } else {
@@ -213,7 +224,15 @@ fun ReservationsScreen(
                     selectedDateMillis = selected,
                     selectedShift = selectedShift,
                     reservations = dayReservations,
-                    onEdit = { reservation -> editingReservation = reservation }
+                    onEdit = { reservation -> editingReservation = reservation },
+                    onViewTicket = { reservation ->
+                        val url = viewModel.ticketUrlCandidates(reservation.id).firstOrNull() ?: return@ReservationsList
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Ezin izan da tiketa ireki", Toast.LENGTH_LONG).show()
+                        }
+                    }
                 )
             }
         }
@@ -524,7 +543,8 @@ private fun ReservationsList(
     selectedDateMillis: Long,
     selectedShift: Shift,
     reservations: List<ReservationUiModel>,
-    onEdit: (ReservationUiModel) -> Unit
+    onEdit: (ReservationUiModel) -> Unit,
+    onViewTicket: (ReservationUiModel) -> Unit
 ) {
     val locale = Locale.getDefault()
     val monthLocale = Locale("eu", "ES")
@@ -559,6 +579,7 @@ private fun ReservationsList(
                     remember(r.egunaOrduaMillis) {
                         timeFormatter.format(Date(r.egunaOrduaMillis))
                     }
+                val isClosed = r.ordainduta != 0
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -583,8 +604,14 @@ private fun ReservationsList(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
-                        IconButton(onClick = { onEdit(r) }) {
-                            Icon(imageVector = Icons.Filled.Edit, contentDescription = "Editatu")
+                        if (isClosed) {
+                            IconButton(onClick = { onViewTicket(r) }) {
+                                Icon(imageVector = Icons.Filled.ReceiptLong, contentDescription = "Tiketa")
+                            }
+                        } else {
+                            IconButton(onClick = { onEdit(r) }) {
+                                Icon(imageVector = Icons.Filled.Edit, contentDescription = "Editatu")
+                            }
                         }
                     }
                 }

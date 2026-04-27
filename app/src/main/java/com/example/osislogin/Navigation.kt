@@ -68,7 +68,14 @@ fun AppNavigation(database: AppDatabase, sessionManager: SessionManager, startDe
     var draftSubmitting by remember { mutableStateOf(false) }
     var draftError by remember { mutableStateOf<String?>(null) }
 
-    val chatViewModel: ChatViewModel = viewModel(factory = ChatViewModel.factory(initialUserName = "Anonimoa"))
+    val chatViewModel: ChatViewModel =
+        viewModel(
+            factory =
+                ChatViewModel.factory(
+                    initialUserName = "Anonimoa",
+                    appContext = appContext
+                )
+        )
     val chatUiState by chatViewModel.uiState.collectAsState()
     val userName by sessionManager.userName.collectAsState(initial = null)
     val userId by sessionManager.userId.collectAsState(initial = null)

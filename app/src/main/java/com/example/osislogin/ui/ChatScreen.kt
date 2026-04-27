@@ -1,5 +1,8 @@
 package com.example.osislogin.ui
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,8 +16,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -34,6 +40,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.lazy.LazyColumn
@@ -42,6 +50,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.delay
+
+private data class FileUiMessage(
+    val fileName: String,
+    val size: String,
+    val localPath: String
+)
 
 @Composable
 fun ChatScreen(
@@ -52,7 +66,22 @@ fun ChatScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var input by remember { mutableStateOf("") }
+    var pendingDownload by remember { mutableStateOf<FileUiMessage?>(null) }
     val listState = rememberLazyListState()
+    val attachLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+            if (uri != null) {
+                viewModel.sendFile(uri)
+            }
+        }
+    val saveLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri: Uri? ->
+            val fileToSave = pendingDownload
+            pendingDownload = null
+            if (uri != null && fileToSave != null) {
+                viewModel.downloadFileToUri(fileToSave.localPath, uri)
+            }
+        }
 
     DisposableEffect(Unit) {
         viewModel.setChatOpen(true)
@@ -72,6 +101,17 @@ fun ChatScreen(
         val author = raw.substring(0, idx).trim().takeIf { it.isNotEmpty() }
         val text = raw.substring(idx + 1).trim().ifEmpty { raw }
         return author to text
+    }
+
+    fun parseFileMessage(content: String): FileUiMessage? {
+        if (!content.startsWith("FILE_READY|")) return null
+        val parts = content.split("|", limit = 4)
+        if (parts.size != 4) return null
+        return FileUiMessage(
+            fileName = parts[1],
+            size = parts[2],
+            localPath = parts[3]
+        )
     }
 
     AppChrome(
@@ -138,6 +178,7 @@ fun ChatScreen(
                     ) {
                         items(uiState.messages) { raw ->
                             val (author, text) = parseAuthor(raw)
+                            val fileMessage = parseFileMessage(text)
                             val isSystemJoin =
                                 raw.contains("sartu da", ignoreCase = true) ||
                                     text.contains("sartu da", ignoreCase = true) ||
@@ -185,11 +226,51 @@ fun ChatScreen(
                                                     color = MaterialTheme.colorScheme.primary
                                                 )
                                             }
-                                            Text(
-                                                text = text,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = Color(0xFF111111)
-                                            )
+                                            if (fileMessage != null) {
+                                                Text(
+                                                    text = "Fitxategia: ${fileMessage.fileName} (${fileMessage.size})",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF111111)
+                                                )
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Button(
+                                                        onClick = {
+                                                            pendingDownload = fileMessage
+                                                            saveLauncher.launch(fileMessage.fileName)
+                                                        },
+                                                        colors =
+                                                            ButtonDefaults.buttonColors(
+                                                                containerColor = Color(0xFF1B345D),
+                                                                contentColor = Color.White
+                                                            ),
+                                                        shape = RoundedCornerShape(12.dp)
+                                                    ) {
+                                                        Text(text = "Deskargatu")
+                                                    }
+                                                    Button(
+                                                        onClick = {
+                                                            viewModel.openSharedFile(fileMessage.localPath)
+                                                        },
+                                                        colors =
+                                                            ButtonDefaults.buttonColors(
+                                                                containerColor = Color(0xFFF3863A),
+                                                                contentColor = Color.White
+                                                            ),
+                                                        shape = RoundedCornerShape(12.dp)
+                                                    ) {
+                                                        Text(text = "Ireki")
+                                                    }
+                                                }
+                                            } else {
+                                                Text(
+                                                    text = text,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = Color(0xFF111111)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -208,6 +289,20 @@ fun ChatScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                IconButton(
+                    onClick = { attachLauncher.launch("*/*") },
+                    modifier =
+                        Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(Color.White)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.AttachFile,
+                        contentDescription = "Erantsi fitxategia",
+                        tint = Color(0xFF1B345D)
+                    )
+                }
                 OutlinedTextField(
                     value = input,
                     onValueChange = { input = it },

@@ -186,11 +186,11 @@ fun LoginScreen(
 
             OutlinedTextField(
                 value = uiState.pasahitza,
-                onValueChange = { viewModel.updatePasahitza(it) },
+                onValueChange = { viewModel.updatePasahitza(it.filter { c -> c.isDigit() }) },
                 label = { Text("Pasahitza") },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                 enabled = !uiState.isLoading,
                 modifier = Modifier.fillMaxWidth()
             )

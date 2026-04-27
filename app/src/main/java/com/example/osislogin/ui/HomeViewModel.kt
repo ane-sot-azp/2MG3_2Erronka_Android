@@ -597,8 +597,7 @@ class HomeViewModel(private val sessionManager: SessionManager) : ViewModel() {
             }
 
         val clamped = nowMinutes.coerceIn(start, end - 1)
-        val rounded = ((clamped - start + 29) / 30) * 30 + start
-        return if (rounded >= end) start else rounded
+        return ((clamped - start) / 30) * 30 + start
     }
 
     private fun slotStartMinutesFromMillis(millis: Long): Int? {

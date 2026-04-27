@@ -880,9 +880,9 @@ class ChatViewModel(userName: String, context: Context) : ViewModel() {
     private fun formatSize(size: Long): String {
         return when {
             size >= 1024L * 1024L ->
-                String.format(Locale.US, "%.2f MB", size / 1024d / 1024d)
+                String.format(Locale.US, "%.2f MB", size / 1024.0 / 1024.0)
             size >= 1024L ->
-                String.format(Locale.US, "%.2f KB", size / 1024d)
+                String.format(Locale.US, "%.2f KB", size / 1024.0)
             else -> "$size B"
         }
     }

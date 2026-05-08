@@ -91,7 +91,7 @@ private data class SelectedFileMetadata(
 )
 
 class ChatViewModel(userName: String, context: Context) : ViewModel() {
-    private val hostCandidates = listOf("127.0.0.0")
+    private val hostCandidates = listOf("192.168.10.5")
     private val port = 5555
     private val sharedChatKey = "OSIS_TXAT_GAKO_2026"
     private val encryptionPrefix = "ENC|"
